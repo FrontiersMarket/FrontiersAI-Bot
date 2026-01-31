@@ -4,6 +4,8 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>OpenClaw Setup</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="/setup/styles.css" />
   <script>
   document.addEventListener('alpine:init', () => {
@@ -257,7 +259,7 @@
 
   <div class="card" x-show="isReady">
     <h2>3) Run onboarding</h2>
-    <button @click="runSetup()" :disabled="loading">Run setup</button>
+    <button @click="runSetup()" :disabled="loading" class="primary-button">Run setup</button>
     <button @click="openPairingModal()" class="secondary-button" :disabled="loading">Approve pairing</button>
     <button @click="resetSetup()" class="tertiary-button" :disabled="loading">Reset setup</button>
     <pre x-text="log"></pre>
@@ -276,7 +278,7 @@
       <label>Pairing code</label>
       <input x-model="pairingCode" type="text" placeholder="e.g. 3EY4PUYS" />
       <div style="margin-top: 1rem; display: flex; gap: 0.5rem;">
-        <button @click="approvePairing()">Approve</button>
+        <button @click="approvePairing()" class="primary-button">Approve</button>
         <button @click="showPairingModal = false" class="secondary-button">Cancel</button>
       </div>
     </div>

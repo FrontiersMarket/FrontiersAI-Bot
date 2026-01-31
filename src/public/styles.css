@@ -1,51 +1,53 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap');
+
 :root {
-  --bg-primary: #050810;
-  --bg-card: #111827;
-  --bg-input: #1f2937;
-  --bg-code: #1f2937;
-  --bg-pre: #0d1117;
-  --border-color: #1f2937;
-  --border-input: #374151;
-  --text-primary: #f0f4ff;
-  --text-muted: #8892b0;
+  --bg-primary: #0f0f0f;
+  --bg-card: #1a1a1a;
+  --bg-input: #262626;
+  --bg-code: #262626;
+  --bg-pre: #1a1a1a;
+  --border-color: #2a2a2a;
+  --border-input: #3a3a3a;
+  --text-primary: #fafafa;
+  --text-muted: #737373;
   --text-code: #00e5cc;
-  --accent: #ff4d4d;
-  --accent-hover: #e63946;
-  --secondary-bg: #1f2937;
-  --secondary-hover: #374151;
-  --tertiary-bg: #374151;
-  --tertiary-hover: #4b5563;
-  --modal-bg: #1a1a2e;
-  --modal-border: #333;
-  --overlay-bg: rgba(0, 0, 0, 0.5);
+  --accent: #ef4444;
+  --accent-hover: #dc2626;
+  --secondary-bg: #262626;
+  --secondary-hover: #333333;
+  --tertiary-bg: #333333;
+  --tertiary-hover: #404040;
+  --modal-bg: #1a1a1a;
+  --modal-border: #2a2a2a;
+  --overlay-bg: rgba(0, 0, 0, 0.7);
 }
 
 @media (prefers-color-scheme: light) {
   :root {
-    --bg-primary: #f8fafc;
+    --bg-primary: #fafafa;
     --bg-card: #ffffff;
-    --bg-input: #f1f5f9;
-    --bg-code: #e2e8f0;
-    --bg-pre: #f1f5f9;
-    --border-color: #e2e8f0;
-    --border-input: #cbd5e1;
-    --text-primary: #1e293b;
-    --text-muted: #64748b;
+    --bg-input: #f5f5f5;
+    --bg-code: #f0f0f0;
+    --bg-pre: #f5f5f5;
+    --border-color: #e5e5e5;
+    --border-input: #d4d4d4;
+    --text-primary: #171717;
+    --text-muted: #737373;
     --text-code: #0d9488;
     --accent: #dc2626;
     --accent-hover: #b91c1c;
-    --secondary-bg: #e2e8f0;
-    --secondary-hover: #cbd5e1;
-    --tertiary-bg: #cbd5e1;
-    --tertiary-hover: #94a3b8;
+    --secondary-bg: #f0f0f0;
+    --secondary-hover: #e5e5e5;
+    --tertiary-bg: #e5e5e5;
+    --tertiary-hover: #d4d4d4;
     --modal-bg: #ffffff;
-    --modal-border: #e2e8f0;
-    --overlay-bg: rgba(0, 0, 0, 0.3);
+    --modal-border: #e5e5e5;
+    --overlay-bg: rgba(0, 0, 0, 0.4);
   }
 }
 
 body {
-  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+  font-family: 'Space Grotesk', ui-sans-serif, system-ui, -apple-system, sans-serif;
   margin: 2rem auto;
   max-width: 900px;
   padding: 0 1rem;
@@ -68,7 +70,7 @@ body {
 .card {
   border: 1px solid var(--border-color);
   border-radius: 12px;
-  padding: 1.25rem;
+  padding: 1.5rem;
   margin: 1rem 0;
   background: var(--bg-card);
   transition: background 0.2s, border-color 0.2s;
@@ -80,20 +82,26 @@ body {
 
 label {
   display: block;
-  margin-top: 0.75rem;
-  font-weight: 600;
-  color: var(--text-primary);
+  margin-top: 1rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
 }
 
 input,
 select {
   width: 100%;
-  padding: 0.6rem;
-  margin-top: 0.25rem;
+  padding: 0.75rem 1rem;
+  margin-top: 0.5rem;
   background: var(--bg-input);
   border: 1px solid var(--border-input);
   border-radius: 8px;
   color: var(--text-primary);
+  font-family: 'Space Grotesk', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  font-size: 0.9375rem;
+  box-sizing: border-box;
   transition: background 0.2s, border-color 0.2s, color 0.2s;
 }
 
@@ -103,18 +111,38 @@ select:focus {
   border-color: var(--accent);
 }
 
+input::placeholder {
+  color: var(--text-muted);
+}
+
 button {
-  padding: 0.8rem 1.2rem;
-  border-radius: 10px;
+  padding: 0.75rem 1.5rem;
+  border-radius: 8px;
   border: 0;
-  background: var(--accent);
-  color: #fff;
-  font-weight: 700;
+  background: var(--secondary-bg);
+  color: var(--text-primary);
+  font-family: 'Space Grotesk', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  font-size: 0.875rem;
+  font-weight: 500;
   cursor: pointer;
   transition: background 0.2s;
 }
 
 button:hover {
+  background: var(--secondary-hover);
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.primary-button {
+  background: var(--accent);
+  color: #fff;
+}
+
+.primary-button:hover {
   background: var(--accent-hover);
 }
 
@@ -122,6 +150,7 @@ button:hover {
   background: var(--secondary-bg);
   color: var(--text-primary);
   margin-left: 0.5rem;
+  border: 1px solid var(--border-input);
 }
 
 .secondary-button:hover {
@@ -129,21 +158,23 @@ button:hover {
 }
 
 .tertiary-button {
-  background: var(--tertiary-bg);
-  color: var(--text-primary);
+  background: transparent;
+  color: var(--text-muted);
   margin-left: 0.5rem;
 }
 
 .tertiary-button:hover {
-  background: var(--tertiary-hover);
+  background: var(--tertiary-bg);
+  color: var(--text-primary);
 }
 
 code {
   background: var(--bg-code);
   color: var(--text-code);
-  padding: 0.1rem 0.3rem;
-  border-radius: 6px;
+  padding: 0.15rem 0.4rem;
+  border-radius: 4px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.875em;
 }
 
 pre {
@@ -155,7 +186,8 @@ pre {
   margin-top: 1rem;
   color: var(--text-muted);
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
+  line-height: 1.6;
   overflow-x: auto;
   transition: background 0.2s, border-color 0.2s, color 0.2s;
 }
@@ -172,17 +204,25 @@ a:hover {
 
 .muted {
   color: var(--text-muted);
+  font-size: 0.875rem;
 }
 
 h1, h2, h3 {
   color: var(--text-primary);
+  font-weight: 600;
 }
 
 h1 {
   text-align: center;
+  font-size: 1.75rem;
+  letter-spacing: -0.02em;
+}
+
+h2 {
+  font-size: 1.125rem;
+  margin-bottom: 0.25rem;
 }
 
 .subtitle {
   text-align: center;
 }
-
