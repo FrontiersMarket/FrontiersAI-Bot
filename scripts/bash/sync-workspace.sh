@@ -1,5 +1,5 @@
 #!/bin/bash
-# Sync workspace .md files from repo → Docker volume
+# Sync workspace .md files and skills/ from repo → Docker volume
 #
 # Usage:
 #   ./sync-workspace.sh           # one-shot sync
@@ -25,23 +25,36 @@ remove_bootstrap() {
 
 sync_files() {
   mkdir -p "$DEST"
+  # Sync top-level .md files
   rsync -av --include='*.md' --exclude='*' "$SRC/" "$DEST/"
+  # Sync skills/ directory (all files)
+  if [ -d "$SRC/skills" ]; then
+    mkdir -p "$DEST/skills"
+    rsync -av "$SRC/skills/" "$DEST/skills/"
+  fi
   remove_bootstrap
   echo "[sync] Done at $(date +%H:%M:%S)"
 }
 
+compute_hash() {
+  # Hash both .md files and skills/* for change detection
+  {
+    find "$SRC" -maxdepth 1 -name '*.md' -exec md5 -q {} + 2>/dev/null | sort
+    find "$SRC/skills" -type f -exec md5 -q {} + 2>/dev/null | sort
+  } | md5 -q || echo "empty"
+}
+
 if [ "$1" = "--watch" ]; then
-  echo "[watch] Watching $SRC for .md changes (polling every 2s)..."
+  echo "[watch] Watching $SRC for .md and skills/* changes (polling every 2s)..."
   echo "[watch] Press Ctrl+C to stop"
   sync_files
 
-  # Store initial checksums
-  LAST_HASH=$(find "$SRC" -name '*.md' -exec md5 -q {} + 2>/dev/null | sort | md5 -q || echo "empty")
+  LAST_HASH=$(compute_hash)
 
   while true; do
     sleep 2
     remove_bootstrap
-    CURRENT_HASH=$(find "$SRC" -name '*.md' -exec md5 -q {} + 2>/dev/null | sort | md5 -q || echo "empty")
+    CURRENT_HASH=$(compute_hash)
     if [ "$CURRENT_HASH" != "$LAST_HASH" ]; then
       echo "[watch] Changes detected, syncing..."
       sync_files
