@@ -1,0 +1,82 @@
+name: Rollback
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+        default: staging
+      image_tag:
+        description: Image tag (commit SHA) to roll back to
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  rollback:
+    name: Rollback ${{ inputs.environment }} to ${{ inputs.image_tag }}
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    steps:
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.WIF_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Rollback on Compute Engine
+        run: |
+          IMAGE="${{ vars.GCP_ARTIFACT_REGISTRY }}/frontiersai-bot:${{ inputs.image_tag }}"
+
+          gcloud compute ssh ${{ secrets.GCE_INSTANCE_NAME }} \
+            --zone=${{ secrets.GCE_INSTANCE_ZONE }} \
+            --project=${{ vars.GCP_PROJECT_ID }} \
+            --command="$(cat <<REMOTE_SCRIPT
+          set -euo pipefail
+
+          CONTAINER_NAME="frontiersai-bot"
+
+          echo "--- Authenticating Docker ---"
+          gcloud auth configure-docker ${{ vars.GCP_REGION }}-docker.pkg.dev --quiet
+
+          echo "--- Pulling ${IMAGE} ---"
+          docker pull "${IMAGE}"
+
+          echo "--- Stopping current container ---"
+          docker stop "\${CONTAINER_NAME}" 2>/dev/null || true
+          docker rm "\${CONTAINER_NAME}" 2>/dev/null || true
+
+          echo "--- Starting rolled-back container ---"
+          docker run -d \
+            --name "\${CONTAINER_NAME}" \
+            --restart unless-stopped \
+            -p 8080:8080 \
+            --env-file <(echo '${{ secrets.ENV_VARS }}') \
+            -v /data:/data \
+            "${IMAGE}"
+
+          echo "--- Waiting for health check ---"
+          for i in \$(seq 1 30); do
+            if curl -sf http://localhost:8080/ > /dev/null 2>&1; then
+              echo "Rollback successful — container is healthy!"
+              exit 0
+            fi
+            echo "Waiting... (\${i}/30)"
+            sleep 5
+          done
+
+          echo "WARNING: Health check did not pass. Check container logs."
+          docker logs --tail 50 "\${CONTAINER_NAME}"
+          exit 1
+          REMOTE_SCRIPT
+          )"

@@ -1,0 +1,8 @@
+{
+  "name": "report-generator",
+  "version": "1.0.0",
+  "description": "Generates professional PDF reports with charts, tables, KPIs, and multi-page support",
+  "dependencies": {
+    "pdf-lib": "^1.17.1"
+  }
+}

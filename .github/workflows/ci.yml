@@ -1,0 +1,46 @@
+name: CI
+
+# ──────────────────────────────────────────────────────────────────────────────
+# DISABLED: Auto-triggers temporarily removed. Uncomment the triggers below
+# when ready to enable CI on push/PR.
+# ──────────────────────────────────────────────────────────────────────────────
+on:
+  workflow_dispatch: {}
+  # pull_request:
+  #   branches: [main]
+  # push:
+  #   branches: [main]
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm run lint
+
+  docker-build:
+    name: Docker Build (dry run)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          tags: frontiersai-bot:ci-${{ github.sha }}

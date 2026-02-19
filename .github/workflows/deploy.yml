@@ -1,0 +1,229 @@
+name: Deploy
+
+# ──────────────────────────────────────────────────────────────────────────────
+# DISABLED: Only manual dispatch is active. Uncomment the triggers below to
+# enable automatic deployments on push to main.
+# ──────────────────────────────────────────────────────────────────────────────
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+        default: staging
+
+  # Uncomment to auto-deploy staging on push to main:
+  # push:
+  #   branches: [main]
+
+# Cancel in-flight deploys for the same branch
+concurrency:
+  group: deploy-${{ github.event.inputs.environment || 'staging' }}
+  cancel-in-progress: true
+
+# ──────────────────────────────────────────────────────────────────────────────
+# SETUP INSTRUCTIONS
+#
+# 1. Google Cloud — create these resources once per project:
+#
+#    # Artifact Registry repository
+#    gcloud artifacts repositories create frontiersai-bot \
+#      --repository-format=docker \
+#      --location=<GCP_REGION> \
+#      --description="Frontiers Bot Docker images"
+#
+#    # Workload Identity Federation (keyless auth from GitHub Actions)
+#    gcloud iam workload-identity-pools create github-actions \
+#      --location=global \
+#      --display-name="GitHub Actions"
+#
+#    gcloud iam workload-identity-pools providers create-oidc github \
+#      --location=global \
+#      --workload-identity-pool=github-actions \
+#      --display-name="GitHub" \
+#      --attribute-mapping="google.subject=assertion.sub,attribute.repository=assertion.repository" \
+#      --issuer-uri="https://token.actions.githubusercontent.com"
+#
+#    # Grant the pool permission to impersonate the deploy SA
+#    gcloud iam service-accounts add-iam-policy-binding <DEPLOY_SA_EMAIL> \
+#      --role=roles/iam.workloadIdentityUser \
+#      --member="principalSet://iam.googleapis.com/projects/<PROJECT_NUMBER>/locations/global/workloadIdentityPools/github-actions/attribute.repository/<GITHUB_ORG>/<GITHUB_REPO>"
+#
+#    # Grant the deploy SA necessary roles
+#    gcloud projects add-iam-policy-binding <GCP_PROJECT_ID> \
+#      --member="serviceAccount:<DEPLOY_SA_EMAIL>" \
+#      --role=roles/artifactregistry.writer
+#
+#    gcloud projects add-iam-policy-binding <GCP_PROJECT_ID> \
+#      --member="serviceAccount:<DEPLOY_SA_EMAIL>" \
+#      --role=roles/compute.instanceAdmin.v1
+#
+# 2. GitHub — set these repository variables and secrets:
+#
+#    Variables (Settings → Variables → Actions):
+#      GCP_PROJECT_ID          — Google Cloud project ID
+#      GCP_REGION              — e.g. us-central1
+#      GCP_ARTIFACT_REGISTRY   — e.g. us-central1-docker.pkg.dev/<project>/frontiersai-bot
+#      WIF_PROVIDER            — projects/<number>/locations/global/workloadIdentityPools/github-actions/providers/github
+#      WIF_SERVICE_ACCOUNT     — deploy SA email
+#
+#    Per-environment secrets (Settings → Environments → staging / production):
+#      GCE_INSTANCE_NAME       — Compute Engine VM name
+#      GCE_INSTANCE_ZONE       — e.g. us-central1-a
+#      ENV_VARS                — Runtime env vars as KEY=VALUE lines (one per line)
+#                                 Must include at minimum: SETUP_PASSWORD
+#                                 Recommended: OPENCLAW_GATEWAY_TOKEN
+#
+# 3. GitHub Environments — create "staging" and "production" environments
+#    (Settings → Environments). Add required reviewers to "production".
+# ──────────────────────────────────────────────────────────────────────────────
+
+env:
+  IMAGE_NAME: frontiersai-bot
+  DOCKER_TAG: ${{ github.sha }}
+
+permissions:
+  contents: read
+  id-token: write  # Required for Workload Identity Federation
+
+jobs:
+  # ── Build & Push ───────────────────────────────────────────────────────────
+  build:
+    name: Build & Push Image
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.meta.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.WIF_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ vars.GCP_REGION }}-docker.pkg.dev --quiet
+
+      - uses: docker/setup-buildx-action@v3
+
+      - id: meta
+        name: Set image tag
+        run: |
+          IMAGE="${{ vars.GCP_ARTIFACT_REGISTRY }}/${{ env.IMAGE_NAME }}"
+          echo "image=${IMAGE}:${{ env.DOCKER_TAG }}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          tags: |
+            ${{ steps.meta.outputs.image }}
+            ${{ vars.GCP_ARTIFACT_REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+
+  # ── Deploy ─────────────────────────────────────────────────────────────────
+  deploy:
+    name: Deploy to ${{ github.event.inputs.environment || 'staging' }}
+    needs: build
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'staging' }}
+    steps:
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.WIF_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Deploy to Compute Engine
+        run: |
+          gcloud compute ssh ${{ secrets.GCE_INSTANCE_NAME }} \
+            --zone=${{ secrets.GCE_INSTANCE_ZONE }} \
+            --project=${{ vars.GCP_PROJECT_ID }} \
+            --command="$(cat <<'REMOTE_SCRIPT'
+          set -euo pipefail
+
+          IMAGE="${{ needs.build.outputs.image }}"
+          CONTAINER_NAME="frontiersai-bot"
+
+          echo "--- Authenticating Docker with Artifact Registry ---"
+          gcloud auth configure-docker ${{ vars.GCP_REGION }}-docker.pkg.dev --quiet
+
+          echo "--- Pulling ${IMAGE} ---"
+          docker pull "${IMAGE}"
+
+          echo "--- Stopping existing container (if any) ---"
+          docker stop "${CONTAINER_NAME}" 2>/dev/null || true
+          docker rm "${CONTAINER_NAME}" 2>/dev/null || true
+
+          echo "--- Starting new container ---"
+          docker run -d \
+            --name "${CONTAINER_NAME}" \
+            --restart unless-stopped \
+            -p 8080:8080 \
+            --env-file <(echo '${{ secrets.ENV_VARS }}') \
+            -v /data:/data \
+            "${IMAGE}"
+
+          echo "--- Waiting for health check ---"
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:8080/ > /dev/null 2>&1; then
+              echo "Container is healthy!"
+              exit 0
+            fi
+            echo "Waiting... (${i}/30)"
+            sleep 5
+          done
+
+          echo "WARNING: Health check did not pass within 150s. Check container logs."
+          docker logs --tail 50 "${CONTAINER_NAME}"
+          exit 1
+          REMOTE_SCRIPT
+          )"
+
+      - name: Post-deploy verification
+        run: |
+          echo "Deployed image: ${{ needs.build.outputs.image }}"
+          echo "Environment: ${{ github.event.inputs.environment || 'staging' }}"
+          echo "Instance: ${{ secrets.GCE_INSTANCE_NAME }} (${{ secrets.GCE_INSTANCE_ZONE }})"
+
+  # ── Cleanup old images (optional) ─────────────────────────────────────────
+  cleanup:
+    name: Cleanup old images
+    needs: deploy
+    runs-on: ubuntu-latest
+    if: success()
+    steps:
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.WIF_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Delete untagged images
+        run: |
+          gcloud artifacts docker images list \
+            ${{ vars.GCP_ARTIFACT_REGISTRY }}/${{ env.IMAGE_NAME }} \
+            --include-tags \
+            --filter="NOT tags:latest AND NOT tags:${{ env.DOCKER_TAG }}" \
+            --format="get(version)" \
+            --sort-by="~UPDATE_TIME" \
+            --limit=100 | tail -n +11 | while read -r digest; do
+              [ -z "${digest}" ] && continue
+              echo "Deleting ${digest}"
+              gcloud artifacts docker images delete \
+                "${{ vars.GCP_ARTIFACT_REGISTRY }}/${{ env.IMAGE_NAME }}@${digest}" \
+                --quiet --delete-tags 2>/dev/null || true
+            done
+          echo "Cleanup complete. Kept latest 10 images."
