@@ -774,6 +774,20 @@ app.post("/setup/api/pairing/approve", requireSetupAuth, async (req, res) => {
     .json({ ok: r.code === 0, output: r.output });
 });
 
+app.post("/setup/api/gateway/restart", requireSetupAuth, async (_req, res) => {
+  try {
+    if (!isConfigured()) {
+      return res.status(400).json({ ok: false, error: "Not configured — run setup first" });
+    }
+    console.log("[api] gateway restart requested");
+    await restartGateway();
+    return res.json({ ok: true, message: "Gateway restarted" });
+  } catch (err) {
+    console.error("[api] gateway restart failed:", err);
+    return res.status(500).json({ ok: false, error: String(err.message || err) });
+  }
+});
+
 app.post("/setup/api/reset", requireSetupAuth, async (_req, res) => {
   try {
     fs.rmSync(configPath(), { force: true });
