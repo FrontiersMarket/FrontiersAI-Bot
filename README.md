@@ -74,6 +74,42 @@ npm run dev     # requires OpenClaw installed globally or OPENCLAW_ENTRY set
 npm run lint    # syntax check
 ```
 
+## Workspace files
+
+The bot's personality and behavior are defined by `.md` files in the [`workspace/`](workspace/) directory. These are the source-of-truth files checked into the repo:
+
+| File | Purpose |
+|------|---------|
+| `IDENTITY.md` | Bot name, personality, and self-description |
+| `SOUL.md` | Core behavior, tone, and communication style |
+| `AGENTS.md` | Agent definitions and capabilities |
+| `BOOTSTRAP.md` | Initial startup instructions |
+| `TOOLS.md` | Available tools and how to use them |
+| `USER.md` | User context and preferences |
+| `HEARTBEAT.md` | Periodic check-in behavior |
+
+### Editing workspace files
+
+1. Edit files in `workspace/` in your editor
+2. Sync to the running container using one of:
+
+```bash
+# One-shot sync
+./sync-workspace.sh
+
+# Watch mode — auto-syncs on every change (polls every 2s)
+./sync-workspace.sh --watch
+```
+
+The sync copies `workspace/*.md` → `.tmpdata/workspace/` (the Docker volume mount). The bot picks up changes on its next interaction — no container restart needed.
+
+### How it works
+
+- `workspace/` in the repo is the editable source
+- `.tmpdata/workspace/` is the Docker volume mounted at `/data/workspace` inside the container
+- `sync-workspace.sh` uses `rsync` to copy only changed `.md` files
+- On GCP, these files are baked into the volume during initial setup or updated via the sync script
+
 ## Environment variables
 
 | Variable | Required | Default | Description |
