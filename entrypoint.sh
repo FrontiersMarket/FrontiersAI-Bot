@@ -15,4 +15,9 @@ fi
 rm -rf /home/linuxbrew/.linuxbrew
 ln -sfn /data/.linuxbrew /home/linuxbrew/.linuxbrew
 
+# Set GCP credentials if the key file was synced into the volume
+if [ -f /data/resources/openclaw-gbq-key.json ]; then
+  export GOOGLE_APPLICATION_CREDENTIALS="/data/resources/openclaw-gbq-key.json"
+fi
+
 exec gosu openclaw node src/server.js

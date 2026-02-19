@@ -5,6 +5,9 @@ npm-debug.log*
 # Local env
 .env
 
+# Sensitive resources
+resources/
+
 # Build artifacts
 /dist
 

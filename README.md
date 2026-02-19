@@ -129,6 +129,15 @@ The sync copies `workspace/*.md` → `.tmpdata/workspace/` (the Docker volume mo
 - `scripts/bash/sync-workspace.sh` uses `rsync` for manual/one-shot syncs
 - On GCP, these files are baked into the volume during initial setup or updated via the sync script
 
+## GCP service account key
+
+The bot requires a GCP service account JSON key file to access Google Cloud services (e.g. BigQuery) from within the OpenClaw context.
+
+1. Place the key file at `resources/openclaw-gbq-key.json`
+2. The `resources/` directory is gitignored — never commit credentials
+3. The sync script (`pnpm watch` or `./scripts/bash/sync-workspace.sh`) copies it to `.tmpdata/resources/`, which is mounted at `/data/resources/` inside the container
+4. The container entrypoint automatically sets `GOOGLE_APPLICATION_CREDENTIALS` to `/data/resources/openclaw-gbq-key.json` if the file exists
+
 ## Environment variables
 
 | Variable | Required | Default | Description |

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Sync workspace .md files and skills/ from repo → Docker volume
+# Sync workspace .md files, skills/, and resources/ from repo → Docker volume
 #
 # Usage:
 #   ./sync-workspace.sh           # one-shot sync
@@ -10,6 +10,8 @@ set -e
 REPO_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 SRC="$REPO_DIR/workspace"
 DEST="$REPO_DIR/.tmpdata/workspace"
+RESOURCES_SRC="$REPO_DIR/resources"
+RESOURCES_DEST="$REPO_DIR/.tmpdata/resources"
 
 if [ ! -d "$SRC" ]; then
   echo "Error: workspace/ directory not found at $SRC"
@@ -32,20 +34,27 @@ sync_files() {
     mkdir -p "$DEST/skills"
     rsync -av "$SRC/skills/" "$DEST/skills/"
   fi
+  # Sync resources/ directory (all files)
+  if [ -d "$RESOURCES_SRC" ]; then
+    mkdir -p "$RESOURCES_DEST"
+    rsync -av "$RESOURCES_SRC/" "$RESOURCES_DEST/"
+    echo "[sync] Resources synced at $(date +%H:%M:%S)"
+  fi
   remove_bootstrap
   echo "[sync] Done at $(date +%H:%M:%S)"
 }
 
 compute_hash() {
-  # Hash both .md files and skills/* for change detection
+  # Hash .md files, skills/*, and resources/* for change detection
   {
     find "$SRC" -maxdepth 1 -name '*.md' -exec md5 -q {} + 2>/dev/null | sort
     find "$SRC/skills" -type f -exec md5 -q {} + 2>/dev/null | sort
+    find "$RESOURCES_SRC" -type f -exec md5 -q {} + 2>/dev/null | sort
   } | md5 -q || echo "empty"
 }
 
 if [ "$1" = "--watch" ]; then
-  echo "[watch] Watching $SRC for .md and skills/* changes (polling every 2s)..."
+  echo "[watch] Watching $SRC and $RESOURCES_SRC for changes (polling every 2s)..."
   echo "[watch] Press Ctrl+C to stop"
   sync_files
 
