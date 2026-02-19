@@ -2,11 +2,19 @@
   "name": "frontiersai-bot",
   "private": true,
   "type": "module",
+  "packageManager": "pnpm@10.16.1",
   "engines": {
     "node": ">=24"
   },
   "scripts": {
-    "dev": "node src/server.js",
+    "watch": "turbo run docker:logs dev:watch",
+    "shell": "docker exec -it frontiersai-bot bash",
+    "tui": "docker exec -it frontiersai-bot node /usr/local/lib/node_modules/openclaw/dist/entry.js tui",
+    "up": "docker start frontiersai-bot 2>/dev/null || docker run -d --name frontiersai-bot -p 8080:8080 -e PORT=8080 -e SETUP_PASSWORD=test -e ENABLE_WEB_TUI=true -e OPENCLAW_STATE_DIR=/data/.openclaw -e OPENCLAW_WORKSPACE_DIR=/data/workspace -v $PWD/.tmpdata:/data frontiersai-bot && echo 'Container started'",
+    "down": "docker stop frontiersai-bot 2>/dev/null && echo 'Container stopped'",
+    "dev:watch": "node scripts/watch-workspace.mjs",
+    "docker:logs": "docker logs -f frontiersai-bot",
+    "docker:build": "docker build -t frontiersai-bot .",
     "start": "node src/server.js",
     "lint": "node -c src/server.js"
   },
@@ -17,6 +25,11 @@
     "ws": "^8.18.0"
   },
   "pnpm": {
-    "onlyBuiltDependencies": ["node-pty"]
+    "onlyBuiltDependencies": [
+      "node-pty"
+    ]
+  },
+  "devDependencies": {
+    "turbo": "^2.8.10"
   }
 }

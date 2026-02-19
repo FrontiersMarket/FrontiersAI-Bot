@@ -36,42 +36,57 @@ cp .env.example .env
 ### 2. Build the Docker image
 
 ```bash
-docker build -t frontiersai-bot .
+pnpm docker:build
 ```
 
-### 3. Run the container
+### 3. Start the container
 
 ```bash
-docker run --rm --name frontiersai-bot -p 8080:8080 \
-  -e PORT=8080 \
-  -e SETUP_PASSWORD=test \
-  -e ENABLE_WEB_TUI=true \
-  -e OPENCLAW_STATE_DIR=/data/.openclaw \
-  -e OPENCLAW_WORKSPACE_DIR=/data/workspace \
-  -v $(pwd)/.tmpdata:/data \
-  frontiersai-bot
+pnpm up
 ```
 
-### 4. Access the app
+### 4. Run dev mode (logs + workspace watcher via Turborepo)
+
+```bash
+pnpm watch
+```
+
+This runs two persistent tasks in parallel using Turborepo:
+- **dev:logs** — follows Docker container logs
+- **dev:watch** — watches `workspace/` for `.md` changes and auto-syncs to the container volume
+
+### 5. Access the app
 
 - **Setup wizard**: http://localhost:8080/setup (password: `test`, username: anything)
 - **Web terminal**: http://localhost:8080/tui (after setup, if `ENABLE_WEB_TUI=true`)
 - **Control UI**: http://localhost:8080/openclaw (after setup)
 
-### 5. Shell into the container
+### 6. Other dev commands
 
 ```bash
-./bot-shell.sh
-# or directly:
-docker exec -it frontiersai-bot bash
+pnpm shell       # bash shell into the container
+pnpm tui         # openclaw TUI inside the container
+pnpm down        # stop the container
 ```
+
+### All scripts
+
+| Command | Description |
+|---------|-------------|
+| `pnpm docker:build` | Build the Docker image |
+| `pnpm up` | Start container (detached) |
+| `pnpm watch` | Turbo: follow logs + watch workspace |
+| `pnpm shell` | Bash shell into container |
+| `pnpm tui` | OpenClaw TUI in container |
+| `pnpm down` | Stop container |
+| `pnpm lint` | Syntax check |
 
 ### Development without Docker
 
 ```bash
 pnpm install
-npm run dev     # requires OpenClaw installed globally or OPENCLAW_ENTRY set
-npm run lint    # syntax check
+pnpm start      # requires OpenClaw installed globally or OPENCLAW_ENTRY set
+pnpm lint       # syntax check
 ```
 
 ## Workspace files
@@ -91,14 +106,17 @@ The bot's personality and behavior are defined by `.md` files in the [`workspace
 ### Editing workspace files
 
 1. Edit files in `workspace/` in your editor
-2. Sync to the running container using one of:
+2. Sync to the running container:
 
 ```bash
-# One-shot sync
-./sync-workspace.sh
+# Automatic (included in pnpm watch)
+pnpm watch
 
-# Watch mode — auto-syncs on every change (polls every 2s)
-./sync-workspace.sh --watch
+# Manual one-shot
+./scripts/bash/sync-workspace.sh
+
+# Manual watch mode (shell-based, polls every 2s)
+./scripts/bash/sync-workspace.sh --watch
 ```
 
 The sync copies `workspace/*.md` → `.tmpdata/workspace/` (the Docker volume mount). The bot picks up changes on its next interaction — no container restart needed.
@@ -107,7 +125,8 @@ The sync copies `workspace/*.md` → `.tmpdata/workspace/` (the Docker volume mo
 
 - `workspace/` in the repo is the editable source
 - `.tmpdata/workspace/` is the Docker volume mounted at `/data/workspace` inside the container
-- `sync-workspace.sh` uses `rsync` to copy only changed `.md` files
+- `pnpm watch` uses Turborepo to run the Node.js file watcher (~300ms debounce) and container logs in parallel
+- `scripts/bash/sync-workspace.sh` uses `rsync` for manual/one-shot syncs
 - On GCP, these files are baked into the volume during initial setup or updated via the sync script
 
 ## Environment variables
