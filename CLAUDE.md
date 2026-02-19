@@ -1,201 +1,254 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Claude Code (claude.ai/code) and developers working with this repository.
 
 ## Overview
 
-This is the **Frontiers Market Bot**, powered by **OpenClaw** (an AI coding assistant platform). It provides:
+**Frontiers Market Bot** — a Dockerized AI bot for Frontiers Market (cattle & ranch platform), powered by **[OpenClaw](https://docs.openclaw.ai/)**. The Express wrapper server provides:
 
 - A web-based setup wizard at `/setup` (protected by `SETUP_PASSWORD`)
-- Automatic reverse proxy from public URL → internal OpenClaw gateway
+- Reverse proxy from public URL → internal OpenClaw gateway (with auto-injected auth)
+- Optional browser-based terminal at `/tui`
 - Persistent state via Docker volume at `/data`
+- Bot personality and skills defined in `workspace/`
 
-The wrapper manages the OpenClaw lifecycle: onboarding → gateway startup → traffic proxying.
+The wrapper manages the full OpenClaw lifecycle: onboarding → gateway startup → traffic proxying → auto-restart on crash.
 
-**Deployment**: Dockerized and deployed to **GCP Compute Engine** instances. Separate instances for **staging** and **production**, each with their own environment variables, credentials, and channel tokens.
+**Deployment**: GCP Compute Engine via GitHub Actions. Separate **staging** and **production** instances with independent env vars, credentials, and channel tokens.
+
+## Project Structure
+
+```
+FrontiersAI-Bot/
+├── src/
+│   ├── server.js                 # Main Express wrapper (~1100 lines)
+│   └── public/
+│       ├── setup.html            # Setup wizard UI (Alpine.js + Tailwind)
+│       ├── loading.html          # Gateway startup loading page
+│       └── tui.html              # Browser terminal (xterm + WebSocket)
+├── workspace/                    # Bot personality & behavior (synced to container)
+│   ├── IDENTITY.md               # Bot name, role, personality
+│   ├── SOUL.md                   # Core behavior and values
+│   ├── AGENTS.md                 # Agent definitions
+│   ├── TOOLS.md                  # Available tools documentation
+│   ├── USER.md                   # User context and preferences
+│   ├── HEARTBEAT.md              # Periodic check-in behavior
+│   └── skills/
+│       └── report-generator/     # PDF report generation skill
+│           ├── report_generator.js
+│           ├── package.json      # Uses pdf-lib
+│           ├── SKILL.md          # Skill documentation
+│           └── results/          # Generated PDF output
+├── scripts/
+│   ├── watch-workspace.mjs       # File watcher: syncs workspace/ → volume
+│   ├── restart-openclaw.sh       # Gateway restart via API call
+│   └── bash/                     # Shell utilities (bot-shell, clean, sync)
+├── resources/                    # Credentials (gitignored)
+├── .github/workflows/
+│   ├── ci.yml                    # Lint + Docker build dry-run
+│   ├── deploy.yml                # Build → push → deploy to GCP (manual dispatch)
+│   └── rollback.yml              # Rollback to previous image (manual dispatch)
+├── Dockerfile                    # Node 22, OpenClaw, Homebrew, pnpm
+├── entrypoint.sh                 # Volume permissions, Homebrew persistence, GCP creds
+├── package.json                  # Root deps + npm scripts
+├── pnpm-lock.yaml
+├── pnpm-workspace.yaml
+└── turbo.json                    # Parallel task runner config
+```
+
+## Packages & Dependencies
+
+| Package | Role |
+|---------|------|
+| **express** ^5.1.0 | Web server for wrapper, setup API, static files |
+| **http-proxy** ^1.18.1 | HTTP/WebSocket reverse proxy to OpenClaw gateway |
+| **node-pty** ^1.0.0 | PTY for browser-based terminal (TUI) |
+| **ws** ^8.18.0 | WebSocket server for TUI communication |
+| **turbo** (dev) | Monorepo task runner (parallel logs + watcher) |
+
+Report generator skill uses **pdf-lib** for PDF generation.
+
+No build step — all frontend is vanilla JS with Alpine.js + Tailwind loaded via CDN.
 
 ## Development Commands
 
 ```bash
-# Local development (requires OpenClaw installed globally or OPENCLAW_ENTRY set)
-npm run dev
+# Build Docker image
+pnpm docker:build
 
-# Production start
-npm start
+# Start container (detached)
+pnpm up
+
+# Follow logs + watch workspace changes (parallel via turbo)
+pnpm watch
+
+# Stop container
+pnpm down
+
+# Restart gateway without restarting container
+pnpm restart-openclaw
+
+# Shell into container
+pnpm shell
 
 # Syntax check
-npm run lint
+pnpm lint
+
+# Start server locally (no Docker, requires OpenClaw installed)
+pnpm start
 ```
 
-## Docker Build & Local Testing
+### Local Development Workflow
 
 ```bash
-# Build the container
-docker build -t frontiers-bot .
+cp .env.example .env         # Configure env vars
+pnpm docker:build            # Build image
+pnpm up                      # Start container
+pnpm watch                   # Logs + workspace sync (turbo)
+# Edit workspace/ files → auto-synced every 300ms to .tmpdata/workspace/
 
-# Run locally with volume
-docker run --rm -p 8080:8080 \
-  -e PORT=8080 \
-  -e SETUP_PASSWORD=test \
-  -e OPENCLAW_STATE_DIR=/data/.openclaw \
-  -e OPENCLAW_WORKSPACE_DIR=/data/workspace \
-  -v $(pwd)/.tmpdata:/data \
-  frontiers-bot
-
-# Access setup wizard
-open http://localhost:8080/setup  # password: test
+# Access:
+# Setup:   http://localhost:8080/setup  (password from .env)
+# Control: http://localhost:8080/openclaw (after setup)
+# TUI:     http://localhost:8080/tui (if ENABLE_WEB_TUI=true)
 ```
 
 ## Architecture
 
 ### Request Flow
 
-1. **User → GCP Instance → Wrapper (Express on PORT)** → routes to:
-   - `/setup/*` → setup wizard (auth: Basic with `SETUP_PASSWORD`)
-   - All other routes → proxied to internal gateway
-
-2. **Wrapper → Gateway** (localhost:18789 by default)
-   - HTTP/WebSocket reverse proxy via `http-proxy`
-   - Automatically injects `Authorization: Bearer <token>` header
+```
+User/Channel → Express Wrapper (PORT) →
+  ├─ /setup/*       → Setup wizard (Basic auth with SETUP_PASSWORD)
+  ├─ /tui & /tui/ws → Browser terminal (if ENABLE_WEB_TUI=true)
+  ├─ /healthz       → Gateway status check
+  └─ /*             → Reverse proxy to gateway (localhost:18789)
+                       (auto-injects Authorization: Bearer <token>)
+```
 
 ### Lifecycle States
 
-1. **Unconfigured**: No `openclaw.json` exists
-   - All non-`/setup` routes redirect to `/setup`
-   - User completes setup wizard → runs `openclaw onboard --non-interactive`
+1. **Unconfigured** (no `openclaw.json`): All non-`/setup` routes redirect to `/setup`. User completes wizard → runs `openclaw onboard --non-interactive`.
 
-2. **Configured**: `openclaw.json` exists
-   - Wrapper spawns `openclaw gateway run` as child process
-   - Waits for gateway to respond on multiple health endpoints
-   - Proxies all traffic with injected bearer token
+2. **Configured** (`openclaw.json` exists): Wrapper spawns `openclaw gateway run`, polls health endpoints (`/openclaw`, `/`, `/health`), then proxies all traffic with injected bearer token. Auto-restarts gateway on crash.
 
-### Key Files
+### Key Server Functions (src/server.js)
 
-- **src/server.js** (main entry): Express wrapper, proxy setup, gateway lifecycle management, configuration persistence (server logic only - no inline HTML/CSS)
-- **src/public/** (static assets for setup wizard):
-  - **setup.html**: Setup wizard HTML structure
-  - **setup-app.js**: Client-side JS for `/setup` wizard (vanilla JS, no build step)
-  - **loading.html**: Loading/retry page shown when gateway is starting
-  - **tui.html**: Optional web-based terminal UI
-- **Dockerfile**: Single-stage build (installs OpenClaw via npm, installs Homebrew, installs wrapper deps)
-- **entrypoint.sh**: Container entrypoint — persists Homebrew to volume, sets permissions, launches server
+| Function | Purpose |
+|----------|---------|
+| `resolveGatewayToken()` | Load token from env → disk → or generate new one |
+| `isConfigured()` | Check if `openclaw.json` exists |
+| `startGateway()` | Spawn gateway child process |
+| `ensureGatewayRunning()` | Idempotent startup with readiness check |
+| `waitForGatewayReady()` | Poll health endpoints (60s timeout) |
+| `restartGateway()` | SIGTERM → wait → respawn |
+| `requireSetupAuth()` | Basic auth middleware (SHA256 timing-safe compare) |
+| `buildOnboardArgs()` | Construct CLI args for `openclaw onboard` |
+| `validatePayload()` | Validate setup form data |
+| `runCmd()` | Spawn child process, capture stdout/stderr |
 
-### Environment Variables
+### Two-Layer Auth Scheme
 
-**Required:**
-- `SETUP_PASSWORD` — protects `/setup` wizard
+1. **Setup wizard**: Basic auth with `SETUP_PASSWORD` + rate limiting (50 req/IP/60s)
+2. **Gateway**: Bearer token auto-injected into all proxied requests
+   - Token resolved at startup: env var → disk file → newly generated
+   - Persisted to `${STATE_DIR}/gateway.token` (mode 0o600)
+   - Must use `proxy.on("proxyReq")` and `proxy.on("proxyReqWs")` event handlers (direct `req.headers` modification breaks WebSocket upgrades)
 
-**Recommended:**
-- `OPENCLAW_STATE_DIR=/data/.openclaw` — config + credentials
-- `OPENCLAW_WORKSPACE_DIR=/data/workspace` — agent workspace
+### Onboarding Process (`/setup/api/run`)
 
-**Optional:**
-- `OPENCLAW_GATEWAY_TOKEN` — auth token for gateway (auto-generated if unset)
-- `PORT` — wrapper HTTP port (default 8080)
-- `INTERNAL_GATEWAY_PORT` — gateway internal port (default 18789)
-- `OPENCLAW_ENTRY` — path to `entry.js` (default `/usr/local/lib/node_modules/openclaw/dist/entry.js`)
-- `ENABLE_WEB_TUI` — enable browser-based terminal at `/tui` (default `false`)
-- `TUI_IDLE_TIMEOUT_MS` — TUI idle disconnect timeout (default 300000 / 5 min)
-- `TUI_MAX_SESSION_MS` — TUI max session duration (default 1800000 / 30 min)
+1. Validate payload (flow, authChoice, tokens, channels)
+2. Run `openclaw onboard --non-interactive --flow <flow> --auth-choice <auth> [secret]`
+3. Configure gateway: `allowInsecureAuth=true`, token auth, `trustedProxies=["127.0.0.1"]`
+4. Optionally set model via `openclaw models set <model>`
+5. Write channel configs via `openclaw config set --json channels.<name>` (not `channels add` — it's flaky)
+6. Spawn gateway and wait for readiness
 
-### Authentication Flow
+### Workspace Sync Flow
 
-The wrapper manages a **two-layer auth scheme**:
+```
+workspace/ (repo) → watch-workspace.mjs → .tmpdata/workspace/ → /data/workspace (container)
+```
 
-1. **Setup wizard auth**: Basic auth with `SETUP_PASSWORD` (src/server.js)
-2. **Gateway auth**: Bearer token (auto-generated or from `OPENCLAW_GATEWAY_TOKEN` env)
-   - Token is auto-injected into proxied requests via `proxyReq` and `proxyReqWs` event handlers
-   - Persisted to `${STATE_DIR}/gateway.token` if not provided via env
+Syncs `*.md` files, `skills/`, and `resources/` with 300ms debounce. This is how bot personality and skill changes reach the running container during development.
 
-### Onboarding Process
+### TUI (Web Terminal)
 
-When the user runs setup via `/setup/api/run`:
+Optional browser terminal at `/tui` (requires `ENABLE_WEB_TUI=true`). Uses `node-pty` to spawn `openclaw tui` in a PTY, connected via WebSocket. Single session only (409 on concurrent access). Idle timeout: 5 min, max session: 30 min.
 
-1. Calls `openclaw onboard --non-interactive` with user-selected auth provider
-2. Writes channel configs (Telegram/Discord/Slack) directly to `openclaw.json` via `openclaw config set --json`
-3. Force-sets gateway config to use token auth + loopback bind + allowInsecureAuth
-4. Spawns gateway process
-5. Waits for gateway readiness (polls multiple endpoints)
+## Environment Variables
 
-**Important**: Channel setup bypasses `openclaw channels add` and writes config directly because `channels add` is flaky across different OpenClaw builds.
+| Variable | Required | Default | Purpose |
+|----------|----------|---------|---------|
+| `SETUP_PASSWORD` | **Yes** | — | Protects `/setup` wizard |
+| `OPENCLAW_STATE_DIR` | Recommended | `~/.openclaw` | Config + credentials dir |
+| `OPENCLAW_WORKSPACE_DIR` | Recommended | `<state>/workspace` | Agent workspace dir |
+| `OPENCLAW_GATEWAY_TOKEN` | No | auto-generated | Bearer token for gateway |
+| `PORT` | No | 8080 | Wrapper HTTP port |
+| `INTERNAL_GATEWAY_PORT` | No | 18789 | Gateway internal port |
+| `OPENCLAW_ENTRY` | No | `/openclaw/dist/entry.js` | OpenClaw CLI entry point |
+| `ENABLE_WEB_TUI` | No | `false` | Enable browser terminal |
+| `TUI_IDLE_TIMEOUT_MS` | No | 300000 | TUI idle timeout (5 min) |
+| `TUI_MAX_SESSION_MS` | No | 1800000 | TUI max session (30 min) |
 
-### Gateway Token Injection
+## CI/CD (GitHub Actions)
 
-The wrapper **always** injects the bearer token into proxied requests so browser clients don't need to know it:
+### deploy.yml (Manual Dispatch)
+1. Build Docker image, tag with commit SHA + `latest`
+2. Push to GCP Artifact Registry
+3. SSH into GCP instance, pull image, stop old container, start new one
+4. Health check: poll `http://localhost:8080/` (30 attempts, 5s interval)
+5. Cleanup old images (keeps latest 10)
 
-- HTTP requests: via `proxy.on("proxyReq")` event handler
-- WebSocket upgrades: via `proxy.on("proxyReqWs")` event handler
+**Requires**: Workload Identity Federation (keyless auth), per-environment secrets (`GCE_INSTANCE_NAME`, `GCE_INSTANCE_ZONE`, `ENV_VARS`), and repo variables (`GCP_PROJECT_ID`, `GCP_REGION`, etc.)
 
-**Important**: Token injection uses `http-proxy` event handlers (`proxyReq` and `proxyReqWs`) rather than direct `req.headers` modification. Direct header modification does not reliably work with WebSocket upgrades, causing intermittent `token_missing` or `token_mismatch` errors.
+### rollback.yml (Manual Dispatch)
+Roll back to a previous commit SHA's image without rebuilding.
 
-This allows the Control UI at `/openclaw` to work without user authentication.
+### ci.yml
+Lint + Docker build dry-run. Auto-trigger currently disabled.
 
-## Deployment
+## Docker & Entrypoint
 
-### Environments
+**Dockerfile**: Node 22 base → system packages → OpenClaw (npm global) → Homebrew → pnpm install (production) → copy source. Creates non-root `openclaw` user. Health check on `/setup/healthz`.
 
-| Environment | Description |
-|-------------|-------------|
-| **Staging** | Testing instance on GCP — uses test channel tokens, test API keys |
-| **Production** | Live instance on GCP — uses production channel tokens, production API keys |
-
-Each environment runs as a separate Docker container on its own GCP Compute Engine instance, with:
-- Its own set of environment variables (API keys, channel tokens, `SETUP_PASSWORD`)
-- Its own persistent volume at `/data` for OpenClaw state
-- Its own domain/IP
-
-### GCP Deployment
-
-1. Build and push the Docker image
-2. SSH into the GCP instance
-3. Pull the image and run with appropriate env vars and volume mount at `/data`
-4. Visit `/setup` to complete onboarding (first deploy only)
-
-**Important**: The `/data` volume must persist across container restarts to retain OpenClaw config, credentials, and gateway token.
+**entrypoint.sh**:
+1. Fix `/data` volume ownership
+2. Persist Homebrew to volume (`/data/.linuxbrew` ← symlink)
+3. Set `GOOGLE_APPLICATION_CREDENTIALS` if key file exists in `/data/resources/`
+4. Start server as `openclaw` user via `gosu`
 
 ## Common Development Tasks
 
-### Testing the setup wizard
-
-1. Delete `${STATE_DIR}/openclaw.json` (or run Reset in the UI)
-2. Visit `/setup` and complete onboarding
-3. Check logs for gateway startup and channel config writes
-
-### Testing authentication
-
-- Setup wizard: Clear browser auth, verify Basic auth challenge
-- Gateway: Remove `Authorization` header injection and verify requests fail
-
-### Debugging gateway startup
-
-Check logs for:
-- `[gateway] starting with command: ...`
-- `[gateway] ready at <endpoint>`
-- `[gateway] failed to become ready after N seconds`
-
-If gateway doesn't start:
-- Verify `openclaw.json` exists and is valid JSON
-- Check `STATE_DIR` and `WORKSPACE_DIR` are writable
-- Ensure bearer token is set in config
-
-### Modifying onboarding args
-
-Edit `buildOnboardArgs()` in src/server.js to add new CLI flags or auth providers.
+### Modifying the setup wizard
+1. Add fields to [setup.html](src/public/setup.html) (Alpine.js data model)
+2. Add config-writing logic in `/setup/api/run` handler in [server.js](src/server.js)
 
 ### Adding new channel types
+1. Add channel fields to setup.html
+2. Add `config set --json channels.<name>` call in the run handler
+3. Update validation in `validatePayload()`
 
-1. Add channel-specific fields to `/setup` HTML (src/public/setup.html)
-2. Add config-writing logic in `/setup/api/run` handler (src/server.js)
-3. Update client JS to collect the fields (src/public/setup-app.js)
+### Modifying onboarding
+Edit `buildOnboardArgs()` in server.js to add CLI flags or auth providers.
+
+### Debugging gateway startup
+Check logs for: `[gateway] starting with command: ...`, `[gateway] ready at <endpoint>`, or `[gateway] failed to become ready after N seconds`. If it won't start: verify `openclaw.json` is valid, dirs are writable, bearer token is set in config.
+
+### Adding a new skill
+1. Create `workspace/skills/<skill-name>/` with implementation + `SKILL.md`
+2. Reference it in `workspace/TOOLS.md` or `workspace/AGENTS.md`
+3. Skill files auto-sync to container via workspace watcher
 
 ## Quirks & Gotchas
 
 1. **Gateway token must be stable across redeploys** → persisted to volume if not in env
-2. **Channels are written via `config set --json`, not `channels add`** → avoids CLI version incompatibilities
-3. **Gateway readiness check polls multiple endpoints** (`/openclaw`, `/`, `/health`) → some builds only expose certain routes
-4. **Discord bots require MESSAGE CONTENT INTENT** → document this in setup wizard
-5. **Gateway spawn inherits stdio** → logs appear in wrapper output
-6. **WebSocket auth requires proxy event handlers** → Direct `req.headers` modification doesn't work for WebSocket upgrades with http-proxy; must use `proxyReqWs` event to reliably inject Authorization header
-7. **Control UI requires allowInsecureAuth to bypass pairing** → Set `gateway.controlUi.allowInsecureAuth=true` during onboarding to prevent "disconnected (1008): pairing required" errors. Wrapper already handles bearer token auth, so device pairing is unnecessary.
-8. **Homebrew is persisted to volume** → `entrypoint.sh` copies Homebrew to `/data/.linuxbrew` on first run, then symlinks it back. This survives container rebuilds.
-9. **Staging vs Production isolation** → Never share env files or tokens between environments. Each GCP instance should have completely independent configuration.
+2. **Channels use `config set --json`, not `channels add`** → avoids CLI version incompatibilities
+3. **Gateway readiness polls multiple endpoints** (`/openclaw`, `/`, `/health`) → some OpenClaw builds only expose certain routes
+4. **Discord bots require MESSAGE CONTENT INTENT** → documented in setup wizard
+5. **WebSocket auth requires proxy event handlers** → direct `req.headers` modification fails for WS upgrades; must use `proxyReqWs` event
+6. **Control UI needs `allowInsecureAuth=true`** → bypasses pairing (wrapper handles auth)
+7. **Homebrew persisted to volume** → `entrypoint.sh` symlinks `/data/.linuxbrew` back on restart
+8. **Staging/Production are fully isolated** → never share env files, tokens, or volumes between environments
+9. **Setup rate limiting** → 50 req/IP/60s on `/setup` routes to prevent brute-force
+10. **Single TUI session** → concurrent access returns 409 Conflict
