@@ -21,6 +21,9 @@ RUN corepack enable && pnpm install --frozen-lockfile --prod
 COPY src ./src
 COPY entrypoint.sh ./entrypoint.sh
 
+LABEL org.opencontainers.image.title="frontiersai-bot" \
+      org.opencontainers.image.description="Frontiers Market Bot powered by OpenClaw"
+
 RUN useradd -m -s /bin/bash openclaw \
   && chown -R openclaw:openclaw /app \
   && mkdir -p /data && chown openclaw:openclaw /data \

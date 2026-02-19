@@ -1,118 +1,141 @@
-# OpenClaw Railway Template (1‑click deploy)
+# Frontiers Market Bot
 
-This repo packages **OpenClaw** for Railway with a small **/setup** web wizard so users can deploy and onboard **without running any commands**.
+AI-powered bot for Frontiers Market, built on **OpenClaw**. Dockerized and deployed to **GCP Compute Engine** with separate staging and production instances.
 
 ## What you get
 
 - **OpenClaw Gateway + Control UI** (served at `/` and `/openclaw`)
-- A friendly **Setup Wizard** at `/setup` (protected by a password)
-- Optional **Web Terminal** at `/tui` for browser-based TUI access
-- Persistent state via **Railway Volume** (so config/credentials/memory survive redeploys)
+- A **Setup Wizard** at `/setup` (password-protected)
+- Optional **Web Terminal** at `/tui` for browser-based CLI access
+- Persistent state via Docker volume (config/credentials survive restarts)
 
-## How it works (high level)
+## How it works
 
-- The container runs a wrapper web server.
-- The wrapper protects `/setup` with `SETUP_PASSWORD`.
-- During setup, the wrapper runs `openclaw onboard --non-interactive ...` inside the container, writes state to the volume, and then starts the gateway.
-- After setup, **`/` is OpenClaw**. The wrapper reverse-proxies all traffic (including WebSockets) to the local gateway process.
+1. The container runs an Express wrapper server
+2. `/setup` is protected by `SETUP_PASSWORD` (Basic auth)
+3. During setup, the wrapper runs `openclaw onboard --non-interactive`, writes state to the volume, and starts the gateway
+4. After setup, all traffic is reverse-proxied (including WebSockets) to the internal OpenClaw gateway
 
-## Getting chat tokens (so you don't have to scramble)
+## Requirements
 
-### Telegram bot token
+- **Docker** (Docker Desktop or Docker Engine)
+- **Node.js 24+** (only needed for local development without Docker)
+- **pnpm** (only needed for local development without Docker)
 
-1. Open Telegram and message **@BotFather**
-2. Run `/newbot` and follow the prompts
-3. BotFather will give you a token that looks like: `123456789:AA...`
-4. Paste that token into `/setup`
+## Local setup
 
-### Discord bot token
-
-1. Go to the Discord Developer Portal: https://discord.com/developers/applications
-2. **New Application** → pick a name
-3. Open the **Bot** tab → **Add Bot**
-4. Copy the **Bot Token** and paste it into `/setup`
-5. Invite the bot to your server (OAuth2 URL Generator → scopes: `bot`, `applications.commands`; then choose permissions)
-
-## Web Terminal (TUI)
-
-The template includes an optional web-based terminal that runs `openclaw tui` in your browser.
-
-### Enabling
-
-Set `ENABLE_WEB_TUI=true` in your Railway Variables. The terminal is **disabled by default**.
-
-Once enabled, access it at `/tui` or via the "Open Terminal" button on the setup page.
-
-### Security
-
-The web TUI implements multiple security layers:
-
-| Control | Description |
-|---------|-------------|
-| **Opt-in only** | Disabled by default, requires explicit `ENABLE_WEB_TUI=true` |
-| **Password protected** | Uses the same `SETUP_PASSWORD` as the setup wizard |
-| **Single session** | Only 1 concurrent TUI session allowed at a time |
-| **Idle timeout** | Auto-closes after 5 minutes of inactivity (configurable via `TUI_IDLE_TIMEOUT_MS`) |
-| **Max duration** | Hard limit of 30 minutes per session (configurable via `TUI_MAX_SESSION_MS`) |
-
-### Configuration
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `ENABLE_WEB_TUI` | `false` | Set to `true` to enable |
-| `TUI_IDLE_TIMEOUT_MS` | `300000` (5 min) | Closes session after inactivity |
-| `TUI_MAX_SESSION_MS` | `1800000` (30 min) | Maximum session duration |
-
-## Local testing
+### 1. Clone and configure
 
 ```bash
-docker build -t openclaw-railway-template .
+git clone <repo-url>
+cd FrontiersAI-Bot
+cp .env.example .env
+# Edit .env as needed (defaults work for local testing)
+```
 
-docker run --rm -p 8080:8080 \
+### 2. Build the Docker image
+
+```bash
+docker build -t frontiersai-bot .
+```
+
+### 3. Run the container
+
+```bash
+docker run --rm --name frontiersai-bot -p 8080:8080 \
   -e PORT=8080 \
   -e SETUP_PASSWORD=test \
   -e ENABLE_WEB_TUI=true \
   -e OPENCLAW_STATE_DIR=/data/.openclaw \
   -e OPENCLAW_WORKSPACE_DIR=/data/workspace \
   -v $(pwd)/.tmpdata:/data \
-  openclaw-railway-template
-
-# Setup wizard: http://localhost:8080/setup (password: test)
-# Web terminal: http://localhost:8080/tui (after setup)
+  frontiersai-bot
 ```
+
+### 4. Access the app
+
+- **Setup wizard**: http://localhost:8080/setup (password: `test`, username: anything)
+- **Web terminal**: http://localhost:8080/tui (after setup, if `ENABLE_WEB_TUI=true`)
+- **Control UI**: http://localhost:8080/openclaw (after setup)
+
+### 5. Shell into the container
+
+```bash
+./bot-shell.sh
+# or directly:
+docker exec -it frontiersai-bot bash
+```
+
+### Development without Docker
+
+```bash
+pnpm install
+npm run dev     # requires OpenClaw installed globally or OPENCLAW_ENTRY set
+npm run lint    # syntax check
+```
+
+## Environment variables
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `SETUP_PASSWORD` | Yes | — | Password to access `/setup` |
+| `OPENCLAW_STATE_DIR` | Recommended | `~/.openclaw` | Config + credentials directory |
+| `OPENCLAW_WORKSPACE_DIR` | Recommended | `<state>/workspace` | Agent workspace directory |
+| `OPENCLAW_GATEWAY_TOKEN` | No | auto-generated | Auth token for gateway |
+| `PORT` | No | `8080` | Wrapper HTTP port |
+| `INTERNAL_GATEWAY_PORT` | No | `18789` | Gateway internal port |
+| `OPENCLAW_ENTRY` | No | `/usr/local/lib/node_modules/openclaw/dist/entry.js` | Path to OpenClaw entry |
+| `ENABLE_WEB_TUI` | No | `false` | Enable browser terminal at `/tui` |
+| `TUI_IDLE_TIMEOUT_MS` | No | `300000` (5 min) | TUI idle disconnect timeout |
+| `TUI_MAX_SESSION_MS` | No | `1800000` (30 min) | TUI max session duration |
+
+See [.env.example](.env.example) for full documentation.
+
+## Getting chat tokens
+
+### Telegram
+
+1. Open Telegram and message **@BotFather**
+2. Run `/newbot` and follow the prompts
+3. Copy the token (looks like `123456789:AA...`) and paste it into `/setup`
+
+### Discord
+
+1. Go to the [Discord Developer Portal](https://discord.com/developers/applications)
+2. **New Application** → pick a name
+3. Open the **Bot** tab → **Add Bot**
+4. Enable **MESSAGE CONTENT INTENT** under Privileged Gateway Intents
+5. Copy the **Bot Token** and paste it into `/setup`
+6. Invite the bot to your server (OAuth2 URL Generator → scopes: `bot`, `applications.commands`)
+
+## Deployment (GCP)
+
+Each environment (staging, production) runs as a separate Docker container on its own GCP Compute Engine instance.
+
+1. Build and push the Docker image to a container registry
+2. SSH into the GCP instance
+3. Pull the image and run with appropriate env vars and a persistent volume at `/data`
+4. Visit `http://<instance-ip>:8080/setup` to complete onboarding (first deploy only)
+
+The `/data` volume **must persist** across container restarts to retain config, credentials, and gateway token.
 
 ## FAQ
 
-**Q: How do I access the setup page?**
+**How do I access the setup page?**
+Go to `/setup` on your instance. Enter the `SETUP_PASSWORD` as the password. The username field is ignored.
 
-A: Go to `/setup` on your deployed instance. When prompted for credentials, use the generated `SETUP_PASSWORD` from your Railway Variables as the password. The username field is ignored—you can leave it empty or enter anything.
+**I see "gateway disconnected" or auth errors in the Control UI.**
+Go to `/setup` and click "Open OpenClaw UI" — the setup page passes the required auth token.
 
-**Q: I see "gateway disconnected" or authentication errors in the Control UI. What should I do?**
+**How do I approve pairing for Telegram or Discord?**
+Go to `/setup` and use the "Approve Pairing" dialog.
 
-A: Go back to `/setup` and click the "Open OpenClaw UI" button from there. The setup page passes the required auth token to the UI. Accessing the UI directly without the token will cause connection errors.
-
-**Q: I don't see the TUI option on the setup page.**
-
-A: Make sure `ENABLE_WEB_TUI=true` is set in your Railway Variables and redeploy. The web terminal is disabled by default.
-
-**Q: How do I approve pairing for Telegram or Discord?**
-
-A: Go to `/setup` and use the "Approve Pairing" dialog to approve pending pairing requests from your chat channels.
-
-**Q: How do I change the AI model after setup?**
-
-A: Use the OpenClaw CLI to switch models. Access the web terminal at `/tui` (if enabled) or SSH into your container and run:
-
+**How do I change the AI model after setup?**
+Shell into the container and run:
 ```bash
 openclaw models set provider/model-id
 ```
+Example: `openclaw models set anthropic/claude-sonnet-4-20250514`. Use `openclaw models list --all` to see available models.
 
-For example: `openclaw models set anthropic/claude-sonnet-4-20250514` or `openclaw models set openai/gpt-4-turbo`. Use `openclaw models list --all` to see available models.
-
-**Q: My config seems broken or I'm getting strange errors. How do I fix it?**
-
-A: Go to `/setup` and click the "Run Doctor" button. This runs `openclaw doctor --repair` which performs health checks on your gateway and channels, creates a backup of your config, and removes any unrecognized or corrupted configuration keys.
-
-## Support
-
-Need help? [Request support on Railway Station](https://station.railway.com/all-templates/d0880c01-2cc5-462c-8b76-d84c1a203348)
+**Config seems broken?**
+Go to `/setup` and click "Run Doctor" to run `openclaw doctor --repair`.
