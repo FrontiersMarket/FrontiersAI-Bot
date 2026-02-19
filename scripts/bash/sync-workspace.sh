@@ -7,7 +7,7 @@
 
 set -e
 
-REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 SRC="$REPO_DIR/workspace"
 DEST="$REPO_DIR/.tmpdata/workspace"
 
@@ -16,9 +16,17 @@ if [ ! -d "$SRC" ]; then
   exit 1
 fi
 
+remove_bootstrap() {
+  if [ -f "$DEST/BOOTSTRAP.md" ]; then
+    rm -f "$DEST/BOOTSTRAP.md"
+    echo "[sync] Removed BOOTSTRAP.md from workspace at $(date +%H:%M:%S)"
+  fi
+}
+
 sync_files() {
   mkdir -p "$DEST"
   rsync -av --include='*.md' --exclude='*' "$SRC/" "$DEST/"
+  remove_bootstrap
   echo "[sync] Done at $(date +%H:%M:%S)"
 }
 
@@ -28,11 +36,12 @@ if [ "$1" = "--watch" ]; then
   sync_files
 
   # Store initial checksums
-  LAST_HASH=$(find "$SRC" -name '*.md' -exec md5 -q {} + 2>/dev/null | sort | md5 -q)
+  LAST_HASH=$(find "$SRC" -name '*.md' -exec md5 -q {} + 2>/dev/null | sort | md5 -q || echo "empty")
 
   while true; do
     sleep 2
-    CURRENT_HASH=$(find "$SRC" -name '*.md' -exec md5 -q {} + 2>/dev/null | sort | md5 -q)
+    remove_bootstrap
+    CURRENT_HASH=$(find "$SRC" -name '*.md' -exec md5 -q {} + 2>/dev/null | sort | md5 -q || echo "empty")
     if [ "$CURRENT_HASH" != "$LAST_HASH" ]; then
       echo "[watch] Changes detected, syncing..."
       sync_files
