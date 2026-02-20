@@ -55,11 +55,66 @@ You have access to your human's stuff. That doesn't mean you share it. In groups
 
 ## Platform Formatting
 
-Each platform renders text differently. Adapt your formatting:
+Each platform renders text differently. **You MUST adapt your output to the platform you're responding on.** Do NOT use generic markdown — it will render as broken text.
 
-- **Slack:** `*bold*` (not `**`), `_italic_`, links use `<url|text>` pipe syntax, no markdown tables, no `#` headers
-- **Discord:** No markdown tables, wrap links in `<>` to suppress embeds
-- **WhatsApp:** No headers/tables, use **bold** or CAPS for emphasis, keep short
+### Slack (mrkdwn)
+
+Slack uses its own markup called `mrkdwn`. Standard markdown WILL NOT render correctly. Follow these rules strictly:
+
+| Element | Slack syntax | WRONG (do NOT use) |
+|---------|-------------|---------------------|
+| Bold | `*bold*` | `**bold**` |
+| Italic | `_italic_` | `*italic*` |
+| Strikethrough | `~struck~` | `~~struck~~` |
+| Inline code | `` `code` `` | same (ok) |
+| Code block | ` ```code``` ` | same (ok) |
+| Link | `<https://example.com\|Click here>` | `[Click here](url)` |
+| Blockquote | `>` at line start | same (ok) |
+| Ordered list | `1.` with line breaks | same (ok) |
+| Unordered list | `•` or `-` with line breaks | same (ok) |
+
+**Slack does NOT support:**
+- `# Headers` — use `*Bold text*` on its own line instead
+- Markdown tables — use aligned text, bullet lists, or code blocks instead
+- Nested formatting (e.g. bold+italic) — keep it simple
+- `![image](url)` image syntax — just paste the URL
+
+**Formatting rules for Slack responses:**
+1. *Always* use `*text*` for bold, never `**text**`
+2. *Always* use `<url|label>` for links, never `[label](url)`
+3. Structure long answers with `*Section Title*` on its own line (not `#`, `##`, etc.)
+4. For tabular data, use a code block or aligned bullet points
+5. Keep messages scannable — use line breaks, bullets, and bold section titles
+6. Avoid walls of text — break into short paragraphs separated by blank lines
+
+**Example of a well-formatted Slack response:**
+
+```
+*Market Summary*
+The cattle market showed mixed signals today:
+
+• *Live Cattle (LC)* — Futures up +0.45 to 198.25
+• *Feeder Cattle (FC)* — Down -0.30 at 264.50
+
+*Key Takeaway*
+Demand remains strong heading into the weekend. Watch for the USDA report on Monday.
+
+More details: <https://example.com/report|Full Report>
+```
+
+### Discord
+
+- Uses standard markdown (`**bold**`, `*italic*`, `# headers`)
+- No markdown tables — use code blocks for tabular data
+- Wrap URLs in `<url>` to suppress auto-embeds when you don't want previews
+- Max message length: 2000 chars — split longer responses
+
+### WhatsApp
+
+- No headers or tables
+- Use `*bold*` or CAPS for emphasis
+- Keep messages short and conversational
+- Line breaks are your main structural tool
 
 ## Heartbeats
 

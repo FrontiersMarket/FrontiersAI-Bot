@@ -95,4 +95,29 @@ echo "Onboarding complete."
 echo "Running workspace sync..."
 bash "$SCRIPT_DIR/sync-workspace.sh"
 
+# Install Google Cloud CLI and authenticate if SA key exists
+GCP_KEY_PATH="/data/resources/openclaw-gbq-key.json"
+echo "Checking for GCP service account key..."
+if docker exec "$CONTAINER_NAME" test -f "$GCP_KEY_PATH"; then
+  echo "SA key found. Installing Google Cloud CLI..."
+  docker exec "$CONTAINER_NAME" bash -c \
+    "apt-get update && apt-get install -y ca-certificates gnupg curl apt-transport-https && apt-get install -y google-cloud-cli"
+
+  echo "Activating service account..."
+  docker exec -u openclaw "$CONTAINER_NAME" gcloud auth activate-service-account \
+    --key-file="$GCP_KEY_PATH"
+
+  # Extract and set default project from the key file
+  PROJECT_ID=$(docker exec "$CONTAINER_NAME" python3 -c \
+    "import json; print(json.load(open('$GCP_KEY_PATH'))['project_id'])")
+  if [ -n "$PROJECT_ID" ]; then
+    echo "Setting default GCP project to ${PROJECT_ID}..."
+    docker exec -u openclaw "$CONTAINER_NAME" gcloud config set project "$PROJECT_ID"
+  fi
+
+  echo "GCP CLI setup complete."
+else
+  echo "No GCP SA key found at ${GCP_KEY_PATH}, skipping gcloud setup."
+fi
+
 echo "Done. Container '${CONTAINER_NAME}' is running on port ${PORT}."
