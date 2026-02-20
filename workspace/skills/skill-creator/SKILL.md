@@ -55,6 +55,7 @@ skill-name/
 │   │   ├── name: (required)
 │   │   └── description: (required)
 │   └── Markdown instructions (required)
+├── results/             - Generated output files (created at runtime, gitignored)
 └── Bundled Resources (optional)
     ├── scripts/          - Executable code (Python/Bash/etc.)
     ├── references/       - Documentation intended to be loaded into context as needed
@@ -198,6 +199,46 @@ Claude reads REDLINING.md or OOXML.md only when the user needs those features.
 
 - **Avoid deeply nested references** - Keep references one level deep from SKILL.md. All reference files should link directly from SKILL.md.
 - **Structure longer reference files** - For files longer than 100 lines, include a table of contents at the top so Claude can see the full scope when previewing.
+
+## Skill Runtime Directives
+
+Every skill created MUST implement these behaviors. Include them in the skill's workflow.
+
+### Acknowledge Processing
+
+When a skill is triggered, immediately send a brief message to the user confirming the request is being processed BEFORE doing any heavy work. Critical for skills that take more than a few seconds.
+
+Good: "Generating your cattle report..." / "Querying the database, one moment..." / "Processing your request..."
+Bad: Silence for 30 seconds, then a result.
+
+### File Output → `results/`
+
+Skills that generate files (PDFs, CSVs, images, exports, etc.) MUST write all output to a `results/` directory inside the skill folder. Create it if it doesn't exist. This keeps the workspace clean and output discoverable.
+
+```
+skill-name/
+└── results/          ← ALL generated files go here
+    ├── report_1708300000000.pdf
+    └── export_2024-01-15.csv
+```
+
+Only write files outside the skill folder when the user explicitly requests a specific path.
+
+### Channel-Aware Response Formatting
+
+Skills that produce chat responses MUST adapt formatting to the active platform. Do NOT use generic markdown — it renders as broken text on most platforms.
+
+| Platform | Bold | Links | Headers | Tables |
+|----------|------|-------|---------|--------|
+| Slack | `*bold*` | `<url\|label>` | `*Bold line*` (no `#`) | Code blocks or bullets |
+| Discord | `**bold**` | plain URL or `<url>` | `# Header` | Code blocks |
+| WhatsApp | `*bold*` | plain URL | None (use bold+newlines) | None |
+
+Full formatting reference lives in `AGENTS.md` → "Platform Formatting" section. When the platform is unknown, check conversation context or default to plain text.
+
+### Error Reporting
+
+When a skill fails or encounters an error, always report it clearly to the user with what went wrong and a suggested next step. Never fail silently.
 
 ## Skill Creation Process
 

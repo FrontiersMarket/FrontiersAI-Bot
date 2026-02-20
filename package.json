@@ -14,7 +14,7 @@
     "down": "docker stop frontiersai-bot 2>/dev/null && echo 'Container stopped'",
     "dev:watch": "node scripts/watch-workspace.mjs",
     "docker:logs": "docker logs -f frontiersai-bot",
-    "restart-openclaw": "bash scripts/restart-openclaw.sh",
+    "restart-openclaw": "pnpm run down && pnpm run up",
     "docker:build": "docker build -t frontiersai-bot .",
     "start": "node src/server.js",
     "lint": "node -c src/server.js"

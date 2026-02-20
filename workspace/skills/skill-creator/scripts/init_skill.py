@@ -62,44 +62,22 @@ Delete this entire "Structuring This Skill" section when done - it's just guidan
 - Concrete examples with realistic user requests
 - References to scripts/templates/references as needed]
 
+## Runtime Behavior
+
+These behaviors are REQUIRED for every skill invocation:
+
+1. **Acknowledge processing** — Immediately send a brief message to the user confirming the request is being processed BEFORE doing heavy work (e.g. "Generating your report...").
+2. **File output → `results/`** — All generated files (PDFs, CSVs, images, etc.) MUST be written to the `results/` directory inside this skill folder. Create it if needed. Only write elsewhere if the user explicitly requests a specific path.
+3. **Channel-aware formatting** — Adapt chat responses to the active platform (Slack mrkdwn, Discord markdown, WhatsApp plain text). See `AGENTS.md` → "Platform Formatting" for syntax details. Never use generic markdown.
+4. **Error reporting** — If something fails, tell the user what went wrong and suggest a next step. Never fail silently.
+
 ## Resources
 
-This skill includes example resource directories that demonstrate how to organize different types of bundled resources:
+Customize or delete the example directories below as needed. Not every skill requires all types.
 
-### scripts/
-Executable code (Python/Bash/etc.) that can be run directly to perform specific operations.
-
-**Examples from other skills:**
-- PDF skill: `fill_fillable_fields.py`, `extract_form_field_info.py` - utilities for PDF manipulation
-- DOCX skill: `document.py`, `utilities.py` - Python modules for document processing
-
-**Appropriate for:** Python scripts, shell scripts, or any executable code that performs automation, data processing, or specific operations.
-
-**Note:** Scripts may be executed without loading into context, but can still be read by Claude for patching or environment adjustments.
-
-### references/
-Documentation and reference material intended to be loaded into context to inform Claude's process and thinking.
-
-**Examples from other skills:**
-- Product management: `communication.md`, `context_building.md` - detailed workflow guides
-- BigQuery: API reference documentation and query examples
-- Finance: Schema documentation, company policies
-
-**Appropriate for:** In-depth documentation, API references, database schemas, comprehensive guides, or any detailed information that Claude should reference while working.
-
-### assets/
-Files not intended to be loaded into context, but rather used within the output Claude produces.
-
-**Examples from other skills:**
-- Brand styling: PowerPoint template files (.pptx), logo files
-- Frontend builder: HTML/React boilerplate project directories
-- Typography: Font files (.ttf, .woff2)
-
-**Appropriate for:** Templates, boilerplate code, document templates, images, icons, fonts, or any files meant to be copied or used in the final output.
-
----
-
-**Any unneeded directories can be deleted.** Not every skill requires all three types of resources.
+- **scripts/** — Executable code (Python/Bash) for deterministic, repeatable operations.
+- **references/** — Documentation loaded into context as needed (schemas, API docs, guides).
+- **assets/** — Files used in output but not loaded into context (templates, images, fonts).
 """
 
 EXAMPLE_SCRIPT = '''#!/usr/bin/env python3
@@ -235,6 +213,13 @@ def init_skill(skill_name, path):
 
     # Create resource directories with example files
     try:
+        # Create results/ directory for generated output
+        results_dir = skill_dir / 'results'
+        results_dir.mkdir(exist_ok=True)
+        gitkeep = results_dir / '.gitkeep'
+        gitkeep.write_text('')
+        print("✅ Created results/ (output directory)")
+
         # Create scripts/ directory with example script
         scripts_dir = skill_dir / 'scripts'
         scripts_dir.mkdir(exist_ok=True)
