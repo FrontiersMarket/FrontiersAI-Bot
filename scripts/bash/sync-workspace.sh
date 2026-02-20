@@ -29,10 +29,18 @@ sync_files() {
   mkdir -p "$DEST"
   # Sync top-level .md files
   rsync -av --include='*.md' --exclude='*' "$SRC/" "$DEST/"
-  # Sync skills/ directory (all files)
+  # Sync skills/ directory (excluding dependency artifacts)
   if [ -d "$SRC/skills" ]; then
     mkdir -p "$DEST/skills"
-    rsync -av "$SRC/skills/" "$DEST/skills/"
+    rsync -av \
+      --exclude='node_modules' \
+      --exclude='__pycache__' \
+      --exclude='.venv' \
+      --exclude='venv' \
+      --exclude='.eggs' \
+      --exclude='site-packages' \
+      --exclude='*.egg-info' \
+      "$SRC/skills/" "$DEST/skills/"
   fi
   # Sync resources/ directory (all files)
   if [ -d "$RESOURCES_SRC" ]; then
