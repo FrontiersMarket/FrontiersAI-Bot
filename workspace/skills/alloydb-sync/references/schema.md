@@ -1,6 +1,6 @@
 # AlloyDB Sync Schema Reference
 
-Dataset: `alloydb_sync`
+Project/Dataset: `frontiersmarketplace.public`
 
 > **Note:** This is a baseline reference. The bot should discover the actual live schema via
 > `INFORMATION_SCHEMA.COLUMNS` and cache it in `memory/bq-schema.md`. If a table or column
@@ -10,7 +10,7 @@ Dataset: `alloydb_sync`
 
 ## Core Entity Tables
 
-### public_ranch
+### ranch
 
 The ranch/operation table. **Use this as the authoritative source for ranch identity, location, and metadata.** This table does NOT have `is_deleted` — all rows are live.
 
@@ -41,7 +41,7 @@ The ranch/operation table. **Use this as the authoritative source for ranch iden
 
 **Note:** No `is_deleted` column on this table — all rows are active.
 
-### public_livestock
+### livestock
 
 The primary table for individual cattle/animal records. **Most queries start here.**
 
@@ -68,7 +68,7 @@ The primary table for individual cattle/animal records. **Most queries start her
 - `WHERE livestock_status = 'ACTIVE'` — only currently active animals
 - `WHERE ear_tag_id = '...' AND ranch_uuid = '...'` — specific animal by tag (scope to ranch to avoid collisions)
 
-### public_group
+### group
 
 Groups or herds within a ranch. Animals are assigned to groups for organization.
 
@@ -82,7 +82,7 @@ Groups or herds within a ranch. Animals are assigned to groups for organization.
 | created_at | TIMESTAMP | Record creation |
 | updated_at | TIMESTAMP | Last modification |
 
-### public_land
+### land
 
 Land parcels, pastures, and paddocks associated with a ranch.
 
@@ -102,14 +102,14 @@ Land parcels, pastures, and paddocks associated with a ranch.
 
 These tables store time-series records linked to individual livestock. Each record has a `livestock_uuid` FK and a date/timestamp.
 
-### public_weight_record
+### weight_record
 
 Weight measurements over time. Critical for tracking gain, loss, and marketability.
 
 | Column | Type | Description |
 |--------|------|-------------|
 | uuid | STRING | Record identifier (PK) |
-| livestock_uuid | STRING | FK to `public_livestock.uuid` |
+| livestock_uuid | STRING | FK to `livestock.uuid` |
 | ranch_uuid | STRING | FK to ranch (for partition/filter efficiency) |
 | weight | FLOAT64 | Weight value |
 | weight_unit | STRING | Unit (e.g., `LBS`, `KG`) |
@@ -123,14 +123,14 @@ Weight measurements over time. Critical for tracking gain, loss, and marketabili
 - Weight gain: Compare earliest vs latest, or sequential differences
 - Average weight for group: aggregate by group_uuid via livestock join
 
-### public_bcs_record
+### bcs_record
 
 Body Condition Score records. Scale typically 1–9 for beef cattle.
 
 | Column | Type | Description |
 |--------|------|-------------|
 | uuid | STRING | Record identifier (PK) |
-| livestock_uuid | STRING | FK to `public_livestock.uuid` |
+| livestock_uuid | STRING | FK to `livestock.uuid` |
 | ranch_uuid | STRING | FK to ranch |
 | score | FLOAT64/INT64 | BCS value (e.g., 1–9 scale) |
 | recorded_at | TIMESTAMP/DATE | When scored |
@@ -138,14 +138,14 @@ Body Condition Score records. Scale typically 1–9 for beef cattle.
 | is_deleted | BOOLEAN | Soft delete flag |
 | created_at | TIMESTAMP | Record creation |
 
-### public_vaccination_record
+### vaccination_record
 
 Vaccination and treatment history.
 
 | Column | Type | Description |
 |--------|------|-------------|
 | uuid | STRING | Record identifier (PK) |
-| livestock_uuid | STRING | FK to `public_livestock.uuid` |
+| livestock_uuid | STRING | FK to `livestock.uuid` |
 | ranch_uuid | STRING | FK to ranch |
 | vaccine_name | STRING | Name/type of vaccine or treatment |
 | administered_at | TIMESTAMP/DATE | When administered |
@@ -155,14 +155,14 @@ Vaccination and treatment history.
 | is_deleted | BOOLEAN | Soft delete flag |
 | created_at | TIMESTAMP | Record creation |
 
-### public_note_record
+### note_record
 
 General notes and observations attached to livestock.
 
 | Column | Type | Description |
 |--------|------|-------------|
 | uuid | STRING | Record identifier (PK) |
-| livestock_uuid | STRING | FK to `public_livestock.uuid` |
+| livestock_uuid | STRING | FK to `livestock.uuid` |
 | ranch_uuid | STRING | FK to ranch |
 | content | STRING | Note text |
 | note_type | STRING | Category/type of note |
@@ -197,16 +197,16 @@ Pre-joined view that includes ranch names alongside livestock data. **Prefer thi
 ## Relationships
 
 ```
-public_ranch (uuid = ranch_uuid everywhere)
-  ├── public_livestock (ranch_uuid)
-  │     ├── public_weight_record (livestock_uuid)
-  │     ├── public_bcs_record (livestock_uuid)
-  │     ├── public_vaccination_record (livestock_uuid)
-  │     └── public_note_record (livestock_uuid)
-  ├── public_group (ranch_uuid)
-  │     └── public_livestock.group_uuid → public_group.uuid
-  └── public_land (ranch_uuid)
-        └── public_livestock.land_uuid → public_land.uuid
+ranch (uuid = ranch_uuid everywhere)
+  ├── livestock (ranch_uuid)
+  │     ├── weight_record (livestock_uuid)
+  │     ├── bcs_record (livestock_uuid)
+  │     ├── vaccination_record (livestock_uuid)
+  │     └── note_record (livestock_uuid)
+  ├── group (ranch_uuid)
+  │     └── livestock.group_uuid → group.uuid
+  └── land (ranch_uuid)
+        └── livestock.land_uuid → land.uuid
 ```
 
 **Key principle:** `ranch_uuid` is the universal partition key. Always include it in WHERE clauses when querying within a ranch scope — it dramatically reduces data scanned.
@@ -216,8 +216,8 @@ public_ranch (uuid = ranch_uuid everywhere)
 ## Important Notes
 
 1. **Soft deletes (`is_deleted`) — ALWAYS FILTER** — Almost every table has an `is_deleted` BOOLEAN column. You **must** include `WHERE is_deleted = false` on every query by default. Rows with `is_deleted = true` are soft-deleted (removed in the app but kept for audit). Including them produces inflated counts, ghost records, and wrong data. Only omit this filter when the user explicitly asks about deleted/archived records. Apply this filter on **both sides** of JOINs when both tables have the column.
-2. **`public_ranch` is the ranch source of truth** — Use it for ranch name resolution, location, metadata, and owner lookups. It does NOT have `is_deleted`. For queries that need ranch name alongside livestock data, you can either JOIN `public_ranch` or use the `livestock_denorm` view
-3. **Status filtering** — `livestock_status` on `public_livestock` controls lifecycle state. Default to `ACTIVE` unless user asks otherwise. This is **in addition to** `is_deleted = false`, not a replacement for it
-4. **UUIDs everywhere** — All PKs and FKs are UUID strings. Never assume integer IDs
-5. **Timestamps** — `created_at` = when the DB record was created; `recorded_at` = when the event actually happened in the real world. Use `recorded_at` for chronological queries
-6. **Table naming** — Tables follow `public_<entity>` pattern. Record/event tables follow `public_<entity>_record` pattern. Views don't have the `public_` prefix (e.g., `livestock_denorm`)
+2. **`ranch` is the ranch source of truth** — Use it for ranch name resolution, location, metadata, and owner lookups. It does NOT have `is_deleted`. For queries that need ranch name alongside livestock data, you can either JOIN `ranch` or use the `livestock_denorm` view.
+3. **Status filtering** — `livestock_status` on `livestock` controls lifecycle state. Default to `ACTIVE` unless user asks otherwise. This is **in addition to** `is_deleted = false`, not a replacement for it.
+4. **UUIDs everywhere** — All PKs and FKs are UUID strings. Never assume integer IDs.
+5. **Timestamps** — `created_at` = when the DB record was created; `recorded_at` = when the event actually happened in the real world. Use `recorded_at` for chronological queries.
+6. **Table naming** — No prefix. Entity tables are named directly (e.g., `ranch`, `livestock`, `group`, `land`). Record/event tables follow `<entity>_record` pattern. Views have no prefix (e.g., `livestock_denorm`).

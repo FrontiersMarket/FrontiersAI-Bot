@@ -11,6 +11,9 @@ resources/
 # Build artifacts
 /dist
 
+# Skill output
+workspace/skills/*/results/
+
 # Backup exports
 *.tar.gz
 

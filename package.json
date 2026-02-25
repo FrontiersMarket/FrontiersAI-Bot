@@ -17,7 +17,8 @@
     "restart-openclaw": "pnpm run down && pnpm run up",
     "docker:build": "docker build -t frontiersai-bot .",
     "start": "node src/server.js",
-    "lint": "node -c src/server.js"
+    "lint": "node -c src/server.js",
+    "clean-messages": "node scripts/clean-bot-messages.mjs"
   },
   "dependencies": {
     "express": "^5.1.0",
@@ -31,6 +32,7 @@
     ]
   },
   "devDependencies": {
+    "@clack/prompts": "^1.0.1",
     "turbo": "^2.8.10"
   }
 }

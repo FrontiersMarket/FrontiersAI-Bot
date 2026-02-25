@@ -1,7 +1,7 @@
 ---
 name: alloydb-sync
 description: >
-  Query ranch, livestock, and cattle record data from Google BigQuery 'alloydb_sync' dataset.
+  Query ranch, livestock, and cattle record data from Google BigQuery 'frontiersmarketplace.public' dataset.
   Use when the user asks about ranches, cattle, livestock counts, weight records, BCS scores,
   vaccination history, notes, groups, pastures, or any Frontiers Market operational data.
 ---
@@ -10,7 +10,7 @@ description: >
 
 ## Purpose
 
-Fast, accurate retrieval of ranch and livestock data from the `alloydb_sync` BigQuery dataset. This is the bot's primary data skill for answering questions about ranches, cattle, records, and operational insights.
+Fast, accurate retrieval of ranch and livestock data from the `frontiersmarketplace.public` BigQuery dataset. This is the bot's primary data skill for answering questions about ranches, cattle, records, and operational insights.
 
 ## Workflow
 
@@ -32,8 +32,8 @@ Every data request follows this sequence:
 > **Always include `WHERE is_deleted = false` unless the user explicitly asks about deleted/archived records.**
 
 This applies to:
-- All `public_*` entity tables (`public_livestock`, `public_group`, `public_land`)
-- All `public_*_record` event tables (`public_weight_record`, `public_bcs_record`, `public_vaccination_record`, `public_note_record`)
+- All entity tables (`livestock`, `group`, `land`)
+- All event/record tables (`weight_record`, `bcs_record`, `vaccination_record`, `note_record`)
 - Any new table discovered via schema — if it has an `is_deleted` column, filter it
 
 ### Why this matters
@@ -64,8 +64,8 @@ If the user asks "how many cattle does this ranch have", use both. If they ask "
 
 Apply `is_deleted = false` on **both sides** of a JOIN when both tables support it:
 ```sql
-FROM `alloydb_sync.public_livestock` l
-JOIN `alloydb_sync.public_weight_record` w ON w.livestock_uuid = l.uuid
+FROM `frontiersmarketplace.public.livestock` l
+JOIN `frontiersmarketplace.public.weight_record` w ON w.livestock_uuid = l.uuid
 WHERE l.is_deleted = false AND w.is_deleted = false
 ```
 
@@ -80,8 +80,8 @@ WHERE l.is_deleted = false AND w.is_deleted = false
 Check if `memory/bq-schema.md` exists. If not, run the discovery query:
 
 ```bash
-bq query --use_legacy_sql=false --format=json --max_rows=5000 \
-  'SELECT table_name, column_name, data_type FROM alloydb_sync.INFORMATION_SCHEMA.COLUMNS ORDER BY table_name, ordinal_position'
+bq query --project_id=frontiersmarketplace --use_legacy_sql=false --format=json --max_rows=5000 \
+  'SELECT table_name, column_name, data_type FROM `frontiersmarketplace.public`.INFORMATION_SCHEMA.COLUMNS ORDER BY table_name, ordinal_position'
 ```
 
 Then write the results to your memory file:
@@ -96,11 +96,11 @@ Format it as a quick-reference table map, noting which tables have `is_deleted`:
 # BQ Schema Cache
 ## Last updated: <date>
 
-### public_livestock
+### livestock
 uuid (STRING), ranch_uuid (STRING), ear_tag_id (STRING), name (STRING), livestock_status (STRING), sex (STRING), breed (STRING), date_of_birth (DATE), sire_uuid (STRING), dam_uuid (STRING), group_uuid (STRING), land_uuid (STRING), is_deleted (BOOLEAN), created_at (TIMESTAMP), updated_at (TIMESTAMP)
 **has is_deleted: yes**
 
-### public_weight_record
+### weight_record
 uuid (STRING), livestock_uuid (STRING), ranch_uuid (STRING), weight (FLOAT64), weight_unit (STRING), recorded_at (TIMESTAMP), notes (STRING), is_deleted (BOOLEAN), created_at (TIMESTAMP)
 **has is_deleted: yes**
 
@@ -147,32 +147,32 @@ User question
 
 | User says | Entity | Table(s) | Strategy |
 |-----------|--------|-----------|----------|
-| "how many cattle in [ranch]" | livestock | `public_livestock` | COUNT with ranch_uuid filter |
+| "how many cattle in [ranch]" | livestock | `livestock` | COUNT with ranch_uuid filter |
 | "show me [ranch name]'s cattle" | livestock | `livestock_denorm` | List with ranch_name filter (denorm is faster for name lookups) |
-| "weight history for tag #123" | weight records | `public_weight_record` JOIN `public_livestock` | Filter by ear_tag_id, ORDER BY date |
-| "latest BCS for [animal]" | BCS records | `public_bcs_record` | Filter + ORDER BY date DESC LIMIT 1 |
-| "vaccination records" | vax records | `public_vaccination_record` | Filter by livestock or ranch scope |
-| "notes on [animal]" | note records | `public_note_record` | Filter by livestock_uuid |
-| "which pasture is [animal] in" | land/location | `public_land` or livestock location fields | Check livestock current_land or join |
-| "groups in [ranch]" | groups | `public_group` | Filter by ranch_uuid |
-| "ranch overview / summary" | multi | `public_ranch` + `public_livestock` counts | Aggregate query |
-| "where is [ranch]" | ranch | `public_ranch` | Location/address lookup |
-| "ranch info / details" | ranch | `public_ranch` | Direct metadata query |
-| "ranches in Texas" | ranch | `public_ranch` | Filter by state_short |
+| "weight history for tag #123" | weight records | `weight_record` JOIN `livestock` | Filter by ear_tag_id, ORDER BY date |
+| "latest BCS for [animal]" | BCS records | `bcs_record` | Filter + ORDER BY date DESC LIMIT 1 |
+| "vaccination records" | vax records | `vaccination_record` | Filter by livestock or ranch scope |
+| "notes on [animal]" | note records | `note_record` | Filter by livestock_uuid |
+| "which pasture is [animal] in" | land/location | `land` or livestock location fields | Check livestock current_land or join |
+| "groups in [ranch]" | groups | `group` | Filter by ranch_uuid |
+| "ranch overview / summary" | multi | `ranch` + `livestock` counts | Aggregate query |
+| "where is [ranch]" | ranch | `ranch` | Location/address lookup |
+| "ranch info / details" | ranch | `ranch` | Direct metadata query |
+| "ranches in Texas" | ranch | `ranch` | Filter by state_short |
 
 ### Resolving Ranch Identity
 
-Users will say ranch names, not UUIDs. **Use `public_ranch` as the primary source** for ranch resolution:
+Users will say ranch names, not UUIDs. **Use `ranch` as the primary source** for ranch resolution:
 
 ```sql
 SELECT uuid, ranch_name, city, state_short
-FROM `alloydb_sync.public_ranch`
+FROM `frontiersmarketplace.public.ranch`
 WHERE LOWER(ranch_name) LIKE LOWER('%user_input%')
 LIMIT 5
 ```
 
 This is preferred over `livestock_denorm` because:
-- `public_ranch` is the authoritative ranch table with full metadata (location, owner, operation type)
+- `ranch` is the authoritative ranch table with full metadata (location, owner, operation type)
 - It works even for ranches with zero livestock
 - It returns ranch-specific fields (address, coordinates) that denorm doesn't have
 
@@ -184,8 +184,8 @@ If you already know the ranch UUID from context (prior conversation, memory), sk
 
 Users refer to cattle by ear tag, name, or description. Resolution order:
 
-1. **Ear tag** (most common): `WHERE ear_tag_id = 'TAG'` on `public_livestock`
-2. **Name**: `WHERE LOWER(name) LIKE LOWER('%name%')` on `public_livestock`
+1. **Ear tag** (most common): `WHERE ear_tag_id = 'TAG'` on `livestock`
+2. **Name**: `WHERE LOWER(name) LIKE LOWER('%name%')` on `livestock`
 3. **UUID** (rare, from prior context): direct lookup
 
 Always scope animal lookups to a ranch when possible (faster, avoids cross-ranch collisions on common tag numbers).
@@ -200,11 +200,11 @@ Always specify only the columns you need. This massively reduces data scanned an
 
 ```sql
 -- BAD
-SELECT * FROM `alloydb_sync.public_livestock` WHERE ranch_uuid = '...'
+SELECT * FROM `frontiersmarketplace.public.livestock` WHERE ranch_uuid = '...'
 
 -- GOOD
 SELECT uuid, ear_tag_id, name, livestock_status
-FROM `alloydb_sync.public_livestock`
+FROM `frontiersmarketplace.public.livestock`
 WHERE ranch_uuid = '...'
 ```
 
@@ -225,7 +225,7 @@ Unless the user explicitly needs all rows or you're doing COUNT/aggregation:
 
 ### 4. Prefer denormalized views
 
-Use `livestock_denorm` over joining `public_livestock` + ranch lookups when you need ranch names alongside livestock data. The view exists specifically for this.
+Use `livestock_denorm` over joining `livestock` + ranch lookups when you need ranch names alongside livestock data. The view exists specifically for this.
 
 ### 5. Use aggregations server-side
 
@@ -234,7 +234,7 @@ Don't fetch raw rows and count in your head. Use SQL:
 ```sql
 -- Counts, averages, min/max, latest
 SELECT COUNT(*) as total, AVG(weight) as avg_weight
-FROM `alloydb_sync.public_weight_record`
+FROM `frontiersmarketplace.public.weight_record`
 WHERE livestock_uuid = '...'
 ```
 
@@ -247,16 +247,16 @@ If you need data from multiple tables for the same answer, consider whether a si
 SELECT l.ear_tag_id, l.name, l.livestock_status,
   w.weight as latest_weight, w.recorded_at as weight_date,
   b.score as latest_bcs, b.recorded_at as bcs_date
-FROM `alloydb_sync.public_livestock` l
+FROM `frontiersmarketplace.public.livestock` l
 LEFT JOIN (
   SELECT livestock_uuid, weight, recorded_at,
     ROW_NUMBER() OVER (PARTITION BY livestock_uuid ORDER BY recorded_at DESC) as rn
-  FROM `alloydb_sync.public_weight_record`
+  FROM `frontiersmarketplace.public.weight_record`
 ) w ON w.livestock_uuid = l.uuid AND w.rn = 1
 LEFT JOIN (
   SELECT livestock_uuid, score, recorded_at,
     ROW_NUMBER() OVER (PARTITION BY livestock_uuid ORDER BY recorded_at DESC) as rn
-  FROM `alloydb_sync.public_bcs_record`
+  FROM `frontiersmarketplace.public.bcs_record`
 ) b ON b.livestock_uuid = l.uuid AND b.rn = 1
 WHERE l.ranch_uuid = 'RANCH_UUID'
 LIMIT 50
@@ -269,13 +269,16 @@ BUT — only JOIN when needed. A simple count doesn't need a join.
 All queries run via the `bq` CLI:
 
 ```bash
-bq query --use_legacy_sql=false --format=json --max_rows=1000 'YOUR_SQL_HERE'
+bq query --project_id=frontiersmarketplace --use_legacy_sql=false --format=json --max_rows=1000 'YOUR_SQL_HERE'
 ```
+
+**Always include `--project_id=frontiersmarketplace`** — this pins the billing project explicitly and prevents cross-project permission errors.
 
 ### Flags
 
 | Flag | Purpose |
 |------|---------|
+| `--project_id=frontiersmarketplace` | **Always required.** Pins billing project explicitly. |
 | `--use_legacy_sql=false` | **Always required.** Uses standard SQL. |
 | `--format=json` | Structured output, easy to parse and present. |
 | `--max_rows=N` | Safety limit. Default 1000. Use lower for list queries. |

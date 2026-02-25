@@ -31,48 +31,71 @@ Full ranch summary. Include: KPI cards (total head, active %, male/female, avg w
 ### 5. Custom Dynamic Reports
 Compose any layout dynamically. Start with KPIs, use charts for trends, tables for detail, text for context.
 
-See [references/report-templates.md](references/report-templates.md) for complete JSON templates for each report type.
+### 6. Ranch Camera Events Report
+Camera-detected event overview for a specific ranch. Include: ranch info text, cameras-with-events table (videos with events, total events per camera), event type breakdown table.
 
 ## Workflow
 
-### Step 0: Capture thread context
-Check if the request came from a thread. If so, include thread ID in all `message send` calls:
-- **Slack:** Use `--thread-id <thread_ts>` if present
-- **Discord:** Use the thread channel ID as target
+### Step 0: Capture channel context
+Note the channel type, channel ID, and thread ID (if in a thread) from the incoming request. All output goes back to that exact channel/thread.
 
-### Step 1: Notify the user
-Send a brief "working on it" message to the same channel/thread before generating.
+### Step 1: Gather data
+Pull all required data using the **alloydb-sync** skill before generating the report. Query exactly what the report needs — livestock records, weight history, BCS, groups, land, vaccination records, etc. Never build a report with incomplete or placeholder data.
 
-```
-message send --channel <CHANNEL_TYPE> -t <CHANNEL_ID> [--thread-id <THREAD_TS>] --text "<message>"
-```
+### Step 2: Build report JSON and generate
+Write the structured JSON to a temp file and spawn the generator:
 
-### Step 2: Gather and prepare data
-Query data (e.g., via alloydb-sync) and structure as JSON per the schema below.
-
-### Step 3: Write JSON to temp file
 ```bash
 echo '<json_data>' > /tmp/report_data.json
 ```
 
-### Step 4: Spawn the report generator
 ```
 subagents spawn --label report-<slug> --task "node {baseDir}/report_generator.js --data_file '/tmp/report_data.json'"
 ```
 
-### Step 5: Send the result
-Parse `FILE_PATH:` from output and send via the same channel/thread.
+### Step 3: Send the file to the user's channel
+Parse `FILE_PATH:` from the output, then immediately upload the file to the same channel/thread the request came from.
+
+**Slack (primary):**
 ```
-message send --channel <CHANNEL_TYPE> -t <CHANNEL_ID> [--thread-id <THREAD_TS>] --media "<file_path>" --text "<summary>"
+message send --channel slack -t <CHANNEL_ID> [--thread-id <THREAD_TS>] --media "<file_path>" --text "<one-line summary>"
 ```
 
-- **Discord:** Use numeric channel ID, never `slash:` interaction IDs
-- **Always** respond on the same channel/thread the user asked from
+**Discord:**
+```
+message send --channel discord -t <CHANNEL_ID> --media "<file_path>" --text "<one-line summary>"
+```
 
-### Step 6: Clean up
+- Always use the `--media` flag — this uploads the file directly into the conversation
+- The summary text should be one concise sentence describing what the report contains
+- **Never** tell the user where the file is stored or reference any internal path
+- **Never** ask the user to download or find the file themselves — it must arrive in the chat
+
+### Step 4: Clean up
 ```bash
 rm -f /tmp/report_data.json <generated_pdf_path>
 ```
+
+## Data Gathering (alloydb-sync Integration)
+
+Before generating any report, use the **alloydb-sync** skill to fetch all needed data. Match query scope to report type:
+
+| Report Type | Key Data to Fetch |
+|-------------|-------------------|
+| Cattle Profile | livestock record, weight history, BCS history, vaccinations, notes |
+| Group Insights | group record, livestock list, avg weight/BCS aggregates, vaccination coverage |
+| Land / Pasture | land records, livestock per pasture, head counts |
+| Ranch Overview | ranch record, all groups, livestock counts, avg metrics |
+| Camera Events | ranch record, cameras, video_events with counts |
+
+Always apply `WHERE is_deleted = false` on all entity and event tables (except `ranch`). See the alloydb-sync skill for query patterns and schema reference.
+
+## Communication Rules
+
+- **One message max before delivery**: If you need to signal work is starting, send at most one brief message (e.g. "Pulling data and generating your report..."). Do not narrate each step.
+- **On success**: Send the file with a single short summary. Nothing else.
+- **On error**: Report only the actionable issue (e.g. "No records found for Tag #1042"). Do not expose stack traces, file paths, or internal tool output.
+- Never reference internal file locations, `results/` directories, or temp paths in any user-facing message.
 
 ## JSON Schema
 
@@ -117,13 +140,15 @@ rm -f /tmp/report_data.json <generated_pdf_path>
 
 *Provide `--data_file` or `--data`, not both. **Always prefer `--data_file`**.
 
-## Output
+## Output (internal)
 
-On success, prints:
+On success, the generator prints:
 ```
-Cattle Profile — Tag #1042 — 2 page(s)
-FILE_PATH:/path/to/results/cattle_profile_tag_1042_1708300000000.pdf
+<Report Title> — N page(s)
+FILE_PATH:/path/to/results/<filename>.pdf
 ```
+
+Parse `FILE_PATH:` to get the path, upload via `--media`, then delete the file. This path is never shared with the user.
 
 ## Design
 
