@@ -1,15 +1,25 @@
-# TOOLS.md - Local Notes
+# TOOLS.md - Skills & Environment Notes
 
-Skills define _how_ tools work. This file is for environment-specific details unique to your setup.
+## Available Skills
 
-## What Goes Here
+| Skill | Triggers when... |
+|-------|-----------------|
+| **alloydb-sync** | User asks about ranches, cattle, livestock counts, weights, BCS, vaccinations, notes, groups, pastures, or any Frontiers Market data |
+| **cattle-gallery** | User wants to "see / show / view / get photos" of an animal or ranch |
+| **report-generator** | User asks for a PDF report or data export |
+| **skill-creator** | User wants to create a new skill or extend existing capabilities |
 
-- Database connection details or aliases
-- Ranch names and identifiers
-- Channel IDs and platform-specific config
-- API endpoints or service URLs
-- Anything environment-specific that skills need
+## Cross-Skill Chaining
+
+Skills work better together — chain them silently, deliver one result:
+
+- Data question → **alloydb-sync** → fetch it
+- Visual question → **alloydb-sync** (resolve animal) → **cattle-gallery** (show photos)
+- Export needed → **alloydb-sync** (fetch data) → **report-generator** (PDF)
+- New capability needed → **skill-creator** (build the skill)
+
+## Environment Notes
+
+Add database aliases, ranch identifiers, channel IDs, API endpoints, and other environment-specific config below.
 
 ---
-
-Add whatever helps you do your job. This is your cheat sheet.
