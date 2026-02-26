@@ -18,12 +18,19 @@ else
 fi
 
 # ── Homebrew persistence ───────────────────────────────────────────────────────
-if [ ! -d /data/.linuxbrew ]; then
-  cp -a /home/linuxbrew/.linuxbrew /data/.linuxbrew
+# On Cloud Run, skip the slow ~500MB copy to GCS FUSE (causes startup probe timeout).
+# The Docker image already has Homebrew baked in at /home/linuxbrew/.linuxbrew.
+# On Cloud Run, just use the baked-in copy directly (no persistence needed since
+# min-instances=1 keeps a warm instance, and the image is immutable).
+if [ "${CLOUD_RUN}" = "true" ]; then
+  echo "[entrypoint] Cloud Run mode — using baked-in Homebrew (skipping FUSE copy)"
+else
+  if [ ! -d /data/.linuxbrew ]; then
+    cp -a /home/linuxbrew/.linuxbrew /data/.linuxbrew
+  fi
+  rm -rf /home/linuxbrew/.linuxbrew
+  ln -sfn /data/.linuxbrew /home/linuxbrew/.linuxbrew
 fi
-
-rm -rf /home/linuxbrew/.linuxbrew
-ln -sfn /data/.linuxbrew /home/linuxbrew/.linuxbrew
 
 # ── First-boot workspace init ──────────────────────────────────────────────────
 # On first boot (no workspace on volume), seed from baked-in defaults.
