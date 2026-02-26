@@ -195,8 +195,8 @@ jobs:
             --update-secrets="SETUP_PASSWORD=${SECRET_PREFIX}-frontiersai-bot-setup-password:latest,OPENCLAW_GATEWAY_TOKEN=${SECRET_PREFIX}-frontiersai-bot-gateway-token:latest" \
             --add-volume=name=data-vol,type=cloud-storage,bucket="${GCS_BUCKET}" \
             --add-volume-mount=volume=data-vol,mount-path=/data \
-            --startup-probe="httpGet.path=/healthz,initialDelaySeconds=10,periodSeconds=5,failureThreshold=12" \
-            --liveness-probe="httpGet.path=/healthz,periodSeconds=30" \
+            --startup-probe="httpGet.path=/setup/healthz,initialDelaySeconds=10,periodSeconds=5,failureThreshold=12" \
+            --liveness-probe="httpGet.path=/setup/healthz,periodSeconds=30" \
             --allow-unauthenticated
 
       - name: Get service URL
@@ -234,9 +234,9 @@ jobs:
             --region="${REGION}" \
             --format='value(status.url)')
 
-          echo "Checking health at ${URL}/healthz"
+          echo "Checking health at ${URL}/setup/healthz"
           for i in $(seq 1 12); do
-            HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' "${URL}/healthz" 2>/dev/null || echo "000")
+            HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' "${URL}/setup/healthz" 2>/dev/null || echo "000")
             if [ "${HTTP_CODE}" = "200" ]; then
               echo "Health check passed!"
               exit 0
