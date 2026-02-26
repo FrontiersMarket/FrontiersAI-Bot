@@ -1,6 +1,7 @@
-name: Deploy
+name: Deploy (GCE — archived)
 
 # ──────────────────────────────────────────────────────────────────────────────
+# ARCHIVED: Replaced by deploy-cloudrun.yml. Kept for reference/fallback.
 # DISABLED: Only manual dispatch is active. Uncomment the triggers below to
 # enable automatic deployments on push to main.
 # ──────────────────────────────────────────────────────────────────────────────

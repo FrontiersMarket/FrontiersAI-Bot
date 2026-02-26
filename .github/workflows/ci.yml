@@ -1,15 +1,11 @@
 name: CI
 
-# ──────────────────────────────────────────────────────────────────────────────
-# DISABLED: Auto-triggers temporarily removed. Uncomment the triggers below
-# when ready to enable CI on push/PR.
-# ──────────────────────────────────────────────────────────────────────────────
 on:
   workflow_dispatch: {}
-  # pull_request:
-  #   branches: [main]
-  # push:
-  #   branches: [main]
+  pull_request:
+    branches: [main, staging]
+  push:
+    branches: [staging]
 
 jobs:
   lint:

@@ -1,0 +1,109 @@
+name: Rollback (Cloud Run)
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+        default: staging
+      revision:
+        description: "Revision name to roll back to (e.g. frontiersai-bot-00003-abc). Leave empty to use previous revision."
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  rollback:
+    name: Rollback ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    steps:
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.WIF_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Determine target revision
+        id: revision
+        env:
+          INPUT_REVISION: ${{ inputs.revision }}
+          PROJECT_PROD: ${{ vars.GCP_PROJECT_ID_PRODUCTION }}
+          PROJECT_STAGING: ${{ vars.GCP_PROJECT_ID_STAGING }}
+          PROJECT_FALLBACK: ${{ vars.GCP_PROJECT_ID }}
+          REGION: ${{ vars.GCP_REGION }}
+          ENV: ${{ inputs.environment }}
+        run: |
+          if [ "${ENV}" = "production" ]; then
+            PROJECT="${PROJECT_PROD:-$PROJECT_FALLBACK}"
+          else
+            PROJECT="${PROJECT_STAGING:-$PROJECT_FALLBACK}"
+          fi
+          echo "project=${PROJECT}" >> "$GITHUB_OUTPUT"
+
+          if [ -n "${INPUT_REVISION}" ]; then
+            echo "target=${INPUT_REVISION}" >> "$GITHUB_OUTPUT"
+            echo "Rolling back to specified revision: ${INPUT_REVISION}"
+          else
+            # Get the second-most-recent revision (previous to current)
+            PREV=$(gcloud run revisions list \
+              --service=frontiersai-bot \
+              --project="${PROJECT}" \
+              --region="${REGION}" \
+              --format='value(REVISION)' \
+              --sort-by='~creationTimestamp' \
+              --limit=2 | tail -1)
+
+            if [ -z "${PREV}" ]; then
+              echo "No previous revision found to roll back to"
+              exit 1
+            fi
+            echo "target=${PREV}" >> "$GITHUB_OUTPUT"
+            echo "Rolling back to previous revision: ${PREV}"
+          fi
+
+      - name: Route traffic to target revision
+        env:
+          PROJECT: ${{ steps.revision.outputs.project }}
+          REGION: ${{ vars.GCP_REGION }}
+          TARGET: ${{ steps.revision.outputs.target }}
+        run: |
+          gcloud run services update-traffic frontiersai-bot \
+            --project="${PROJECT}" \
+            --region="${REGION}" \
+            --to-revisions="${TARGET}=100"
+          echo "Traffic routed to ${TARGET}"
+
+      - name: Verify rollback
+        env:
+          PROJECT: ${{ steps.revision.outputs.project }}
+          REGION: ${{ vars.GCP_REGION }}
+        run: |
+          URL=$(gcloud run services describe frontiersai-bot \
+            --project="${PROJECT}" \
+            --region="${REGION}" \
+            --format='value(status.url)')
+
+          echo "Checking health at ${URL}/healthz"
+          for i in $(seq 1 6); do
+            HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' "${URL}/healthz" 2>/dev/null || echo "000")
+            if [ "${HTTP_CODE}" = "200" ]; then
+              echo "Rollback verified — service is healthy!"
+              exit 0
+            fi
+            echo "Attempt ${i}/6 — HTTP ${HTTP_CODE}, retrying in 10s..."
+            sleep 10
+          done
+
+          echo "WARNING: Health check did not pass after rollback"
+          exit 1
