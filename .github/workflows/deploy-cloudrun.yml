@@ -215,6 +215,7 @@ jobs:
     name: Verify deployment
     needs: [config, deploy]
     runs-on: ubuntu-latest
+    environment: ${{ needs.config.outputs.environment }}
     steps:
       - id: auth
         uses: google-github-actions/auth@v2
@@ -255,8 +256,9 @@ jobs:
   # ── Cleanup old images ─────────────────────────────────────────────────────
   cleanup:
     name: Cleanup old images
-    needs: [verify]
+    needs: [config, verify]
     runs-on: ubuntu-latest
+    environment: ${{ needs.config.outputs.environment }}
     if: success()
     steps:
       - id: auth
