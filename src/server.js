@@ -656,6 +656,17 @@ app.post("/setup/api/run", requireSetupAuth, async (req, res) => {
       );
       extra += `[config] gateway.trustedProxies exit=${proxiesResult.code}\n`;
 
+      const sandboxResult = await runCmd(
+        OPENCLAW_NODE,
+        clawArgs([
+          "config",
+          "set",
+          "sandbox.workspaceAccess",
+          "rw",
+        ]),
+      );
+      extra += `[config] sandbox.workspaceAccess=rw exit=${sandboxResult.code}\n`;
+
       if (payload.model?.trim()) {
         extra += `[setup] Setting model to ${payload.model.trim()}...\n`;
         const modelResult = await runCmd(

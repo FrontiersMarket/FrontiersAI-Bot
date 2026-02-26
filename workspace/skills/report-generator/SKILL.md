@@ -48,31 +48,36 @@ If you cannot determine the channel ID from the request context, ask the user be
 Pull all required data using the **alloydb-sync** skill before generating the report. Query exactly what the report needs — livestock records, weight history, BCS, groups, land, vaccination records, etc. Never build a report with incomplete or placeholder data.
 
 ### Step 2: Build report JSON and generate
-Write the structured JSON to a temp file and spawn the generator:
+Write the structured JSON to a temp file, run the generator, then move the output to `/tmp/` (the allowed media directory for uploads):
 
 ```bash
 echo '<json_data>' > /tmp/report_data.json
+node /data/workspace/skills/report-generator/report_generator.js --data_file '/tmp/report_data.json'
 ```
 
+The script prints `FILE_PATH:/path/to/results/<filename>.pdf` when done. Immediately copy it to `/tmp/`:
+
+```bash
+cp <FILE_PATH> /tmp/<filename>.pdf
 ```
-subagents spawn --label report-<slug> --task "node {baseDir}/report_generator.js --data_file '/tmp/report_data.json'"
-```
+
+Use `/tmp/<filename>.pdf` as the upload path in Step 3.
 
 ### Step 3: Send the file to the user's channel
-Parse `FILE_PATH:` from the generator output, then immediately upload to the channel captured in Step 0.
+Upload from `/tmp/` to the channel captured in Step 0.
 
 **Slack:**
 ```
-message send --channel slack -t <CHANNEL_ID> --media "<file_path>" --text "<one-line summary>"
+message send --channel slack -t <CHANNEL_ID> --media "/tmp/<filename>.pdf" --text "<one-line summary>"
 ```
-If the request was in a thread, add `--thread-id <THREAD_TS>`:
+If in a thread:
 ```
-message send --channel slack -t <CHANNEL_ID> --thread-id <THREAD_TS> --media "<file_path>" --text "<one-line summary>"
+message send --channel slack -t <CHANNEL_ID> --thread-id <THREAD_TS> --media "/tmp/<filename>.pdf" --text "<one-line summary>"
 ```
 
 **Discord:**
 ```
-message send --channel discord -t <CHANNEL_ID> --media "<file_path>" --text "<one-line summary>"
+message send --channel discord -t <CHANNEL_ID> --media "/tmp/<filename>.pdf" --text "<one-line summary>"
 ```
 
 - `--media` is what triggers the file upload — do not omit it
@@ -83,7 +88,7 @@ message send --channel discord -t <CHANNEL_ID> --media "<file_path>" --text "<on
 
 ### Step 4: Clean up
 ```bash
-rm -f /tmp/report_data.json <generated_pdf_path>
+rm -f /tmp/report_data.json /tmp/<filename>.pdf <original_FILE_PATH>
 ```
 
 ## Data Gathering (alloydb-sync Integration)
@@ -102,10 +107,16 @@ Always apply `WHERE is_deleted = false` on all entity and event tables (except `
 
 ## Communication Rules
 
-- **Acknowledge before starting**: Send one brief message before doing any work (e.g. "Generating your report…"). This is the only message before the file arrives.
-- **On success**: Upload the file with a single short summary sentence. Nothing else.
-- **On error**: Report only the actionable issue (e.g. "No records found for Tag #1042"). Do not expose stack traces, file paths, or internal tool output.
-- Never reference internal file locations, `results/` directories, or temp paths in any user-facing message.
+**Message sequence — exactly 2 messages total:**
+
+1. **Before any work**: Send ONE brief acknowledgement (e.g. "Generating your report…")
+2. **After file upload**: The file arrives with a one-sentence summary
+
+That's it. Nothing in between. No progress updates. No "I'll now do X". No "I found N records". No narration of tool calls or intermediate steps. Work entirely in silence between message 1 and message 2.
+
+**On error**: Report only the actionable issue in plain language. No stack traces, no file paths, no internal details.
+
+Never reference internal file locations, `results/` directories, or temp paths in any user-facing message.
 
 ## JSON Schema
 
