@@ -1,0 +1,291 @@
+name: Deploy (Cloud Run)
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+        default: staging
+
+  push:
+    branches: [staging]
+
+# Cancel in-flight deploys for the same environment
+concurrency:
+  group: deploy-cloudrun-${{ github.event.inputs.environment || 'staging' }}
+  cancel-in-progress: true
+
+# ──────────────────────────────────────────────────────────────────────────────
+# SETUP INSTRUCTIONS
+#
+# 1. GCS buckets for persistent state (one-time):
+#    gcloud storage buckets create gs://frontiersai-bot-data-staging \
+#      --project=frontiersmarketplace-staging --location=us-central1 \
+#      --uniform-bucket-level-access
+#    gcloud storage buckets create gs://frontiersai-bot-data-production \
+#      --project=frontiersmarketplace --location=us-central1 \
+#      --uniform-bucket-level-access
+#
+# 2. Service account (per project):
+#    gcloud iam service-accounts create frontiersai-bot-sa \
+#      --project=frontiersmarketplace-staging \
+#      --display-name="FrontiersAI Bot SA"
+#    Grant: roles/storage.objectUser, roles/secretmanager.secretAccessor
+#
+# 3. Secrets in GCP Secret Manager:
+#    stg-frontiersai-bot-setup-password
+#    stg-frontiersai-bot-gateway-token
+#    prd-frontiersai-bot-setup-password
+#    prd-frontiersai-bot-gateway-token
+#
+# 4. WIF deploy SA needs: roles/run.admin, roles/iam.serviceAccountUser
+#
+# 5. GitHub Variables (Settings → Variables → Actions):
+#    GCP_PROJECT_ID_STAGING    — frontiersmarketplace-staging
+#    GCP_PROJECT_ID_PRODUCTION — frontiersmarketplace
+#    GCP_REGION                — us-central1
+#    GCP_ARTIFACT_REGISTRY     — us-central1-docker.pkg.dev/frontiersmarketplace-staging/frontiersai-bot
+#    WIF_PROVIDER              — projects/<number>/locations/global/workloadIdentityPools/github-actions/providers/github
+#    WIF_SERVICE_ACCOUNT       — deploy SA email
+#
+# 6. GitHub Environments: "staging" and "production" (add reviewers to production)
+# ──────────────────────────────────────────────────────────────────────────────
+
+env:
+  IMAGE_NAME: frontiersai-bot
+  DOCKER_TAG: ${{ github.sha }}
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  # ── Resolve environment ────────────────────────────────────────────────────
+  config:
+    name: Resolve config
+    runs-on: ubuntu-latest
+    outputs:
+      environment: ${{ steps.env.outputs.environment }}
+      gcp_project: ${{ steps.env.outputs.gcp_project }}
+      service_account: ${{ steps.env.outputs.service_account }}
+      gcs_bucket: ${{ steps.env.outputs.gcs_bucket }}
+      secret_prefix: ${{ steps.env.outputs.secret_prefix }}
+      memory: ${{ steps.env.outputs.memory }}
+      max_instances: ${{ steps.env.outputs.max_instances }}
+    steps:
+      - id: env
+        env:
+          INPUT_ENV: ${{ github.event.inputs.environment }}
+          PROJECT_PROD: ${{ vars.GCP_PROJECT_ID_PRODUCTION }}
+          PROJECT_FALLBACK: ${{ vars.GCP_PROJECT_ID }}
+          PROJECT_STAGING: ${{ vars.GCP_PROJECT_ID_STAGING }}
+        run: |
+          ENV="${INPUT_ENV:-staging}"
+          echo "environment=${ENV}" >> "$GITHUB_OUTPUT"
+
+          if [ "${ENV}" = "production" ]; then
+            PROJECT="${PROJECT_PROD:-$PROJECT_FALLBACK}"
+            echo "gcp_project=${PROJECT}" >> "$GITHUB_OUTPUT"
+            echo "service_account=frontiersai-bot-sa@${PROJECT}.iam.gserviceaccount.com" >> "$GITHUB_OUTPUT"
+            echo "gcs_bucket=frontiersai-bot-data-production" >> "$GITHUB_OUTPUT"
+            echo "secret_prefix=prd" >> "$GITHUB_OUTPUT"
+            echo "memory=2Gi" >> "$GITHUB_OUTPUT"
+            echo "max_instances=3" >> "$GITHUB_OUTPUT"
+          else
+            PROJECT="${PROJECT_STAGING:-$PROJECT_FALLBACK}"
+            echo "gcp_project=${PROJECT}" >> "$GITHUB_OUTPUT"
+            echo "service_account=frontiersai-bot-sa@${PROJECT}.iam.gserviceaccount.com" >> "$GITHUB_OUTPUT"
+            echo "gcs_bucket=frontiersai-bot-data-staging" >> "$GITHUB_OUTPUT"
+            echo "secret_prefix=stg" >> "$GITHUB_OUTPUT"
+            echo "memory=1Gi" >> "$GITHUB_OUTPUT"
+            echo "max_instances=2" >> "$GITHUB_OUTPUT"
+          fi
+
+  # ── Build & Push ───────────────────────────────────────────────────────────
+  build:
+    name: Build & Push Image
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.meta.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.WIF_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        env:
+          REGION: ${{ vars.GCP_REGION }}
+        run: gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
+
+      - uses: docker/setup-buildx-action@v3
+
+      - id: meta
+        name: Set image tag
+        env:
+          REGISTRY: ${{ vars.GCP_ARTIFACT_REGISTRY }}
+        run: |
+          IMAGE="${REGISTRY}/${IMAGE_NAME}"
+          echo "image=${IMAGE}:${DOCKER_TAG}" >> "$GITHUB_OUTPUT"
+          echo "registry_image=${IMAGE}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          tags: |
+            ${{ steps.meta.outputs.image }}
+            ${{ steps.meta.outputs.registry_image }}:latest
+
+  # ── Deploy to Cloud Run ────────────────────────────────────────────────────
+  deploy:
+    name: Deploy to Cloud Run (${{ needs.config.outputs.environment }})
+    needs: [config, build]
+    runs-on: ubuntu-latest
+    environment: ${{ needs.config.outputs.environment }}
+    steps:
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.WIF_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+        with:
+          version: '>= 496.0.0'
+
+      - name: Deploy to Cloud Run
+        env:
+          PROJECT: ${{ needs.config.outputs.gcp_project }}
+          REGION: ${{ vars.GCP_REGION }}
+          IMAGE: ${{ needs.build.outputs.image }}
+          SA: ${{ needs.config.outputs.service_account }}
+          MEMORY: ${{ needs.config.outputs.memory }}
+          MAX_INST: ${{ needs.config.outputs.max_instances }}
+          SECRET_PREFIX: ${{ needs.config.outputs.secret_prefix }}
+          GCS_BUCKET: ${{ needs.config.outputs.gcs_bucket }}
+        run: |
+          gcloud run deploy frontiersai-bot \
+            --project="${PROJECT}" \
+            --region="${REGION}" \
+            --image="${IMAGE}" \
+            --execution-environment=gen2 \
+            --service-account="${SA}" \
+            --port=8080 \
+            --memory="${MEMORY}" \
+            --cpu=1 \
+            --min-instances=1 \
+            --max-instances="${MAX_INST}" \
+            --no-cpu-throttling \
+            --session-affinity \
+            --timeout=300 \
+            --set-env-vars="CLOUD_RUN=true,PORT=8080,OPENCLAW_STATE_DIR=/data/.openclaw,OPENCLAW_WORKSPACE_DIR=/data/workspace" \
+            --update-secrets="SETUP_PASSWORD=${SECRET_PREFIX}-frontiersai-bot-setup-password:latest,OPENCLAW_GATEWAY_TOKEN=${SECRET_PREFIX}-frontiersai-bot-gateway-token:latest" \
+            --add-volume=name=data-vol,type=cloud-storage,bucket="${GCS_BUCKET}" \
+            --add-volume-mount=volume=data-vol,mount-path=/data \
+            --startup-probe-path=/healthz \
+            --startup-probe-initial-delay=10 \
+            --startup-probe-period=5 \
+            --startup-probe-failure-threshold=12 \
+            --liveness-probe-path=/healthz \
+            --liveness-probe-period=30 \
+            --allow-unauthenticated
+
+      - name: Get service URL
+        env:
+          PROJECT: ${{ needs.config.outputs.gcp_project }}
+          REGION: ${{ vars.GCP_REGION }}
+        run: |
+          URL=$(gcloud run services describe frontiersai-bot \
+            --project="${PROJECT}" \
+            --region="${REGION}" \
+            --format='value(status.url)')
+          echo "Service URL: ${URL}"
+
+  # ── Verify ─────────────────────────────────────────────────────────────────
+  verify:
+    name: Verify deployment
+    needs: [config, deploy]
+    runs-on: ubuntu-latest
+    steps:
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.WIF_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Health check
+        env:
+          PROJECT: ${{ needs.config.outputs.gcp_project }}
+          REGION: ${{ vars.GCP_REGION }}
+        run: |
+          URL=$(gcloud run services describe frontiersai-bot \
+            --project="${PROJECT}" \
+            --region="${REGION}" \
+            --format='value(status.url)')
+
+          echo "Checking health at ${URL}/healthz"
+          for i in $(seq 1 12); do
+            HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' "${URL}/healthz" 2>/dev/null || echo "000")
+            if [ "${HTTP_CODE}" = "200" ]; then
+              echo "Health check passed!"
+              exit 0
+            fi
+            echo "Attempt ${i}/12 — HTTP ${HTTP_CODE}, retrying in 10s..."
+            sleep 10
+          done
+
+          echo "Health check failed after 2 minutes"
+          gcloud run services logs read frontiersai-bot \
+            --project="${PROJECT}" \
+            --region="${REGION}" \
+            --limit=50
+          exit 1
+
+  # ── Cleanup old images ─────────────────────────────────────────────────────
+  cleanup:
+    name: Cleanup old images
+    needs: [verify]
+    runs-on: ubuntu-latest
+    if: success()
+    steps:
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.WIF_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Keep latest 10 images
+        env:
+          REGISTRY: ${{ vars.GCP_ARTIFACT_REGISTRY }}
+        run: |
+          gcloud artifacts docker images list \
+            "${REGISTRY}/${IMAGE_NAME}" \
+            --include-tags \
+            --filter="NOT tags:latest AND NOT tags:${DOCKER_TAG}" \
+            --format="get(version)" \
+            --sort-by="~UPDATE_TIME" \
+            --limit=100 | tail -n +11 | while read -r digest; do
+              [ -z "${digest}" ] && continue
+              echo "Deleting ${digest}"
+              gcloud artifacts docker images delete \
+                "${REGISTRY}/${IMAGE_NAME}@${digest}" \
+                --quiet --delete-tags 2>/dev/null || true
+            done
+          echo "Cleanup complete. Kept latest 10 images."

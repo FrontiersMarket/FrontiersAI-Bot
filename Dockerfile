@@ -19,6 +19,7 @@ COPY package.json pnpm-lock.yaml ./
 RUN corepack enable && pnpm install --frozen-lockfile --prod
 
 COPY src ./src
+COPY workspace ./workspace-defaults
 COPY entrypoint.sh ./entrypoint.sh
 
 LABEL org.opencontainers.image.title="frontiersai-bot" \

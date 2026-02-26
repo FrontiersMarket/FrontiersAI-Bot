@@ -14,7 +14,7 @@ This file provides guidance to Claude Code (claude.ai/code) and developers worki
 
 The wrapper manages the full OpenClaw lifecycle: onboarding → gateway startup → traffic proxying → auto-restart on crash.
 
-**Deployment**: GCP Compute Engine via GitHub Actions. Separate **staging** and **production** instances with independent env vars, credentials, and channel tokens.
+**Deployment**: GCP Cloud Run (v2 with GCS FUSE volume mounts) via GitHub Actions. Separate **staging** and **production** services with independent secrets, GCS buckets, and channel tokens.
 
 ## Project Structure
 
@@ -45,9 +45,11 @@ FrontiersAI-Bot/
 │   └── bash/                     # Shell utilities (bot-shell, clean, sync)
 ├── resources/                    # Credentials (gitignored)
 ├── .github/workflows/
-│   ├── ci.yml                    # Lint + Docker build dry-run
-│   ├── deploy.yml                # Build → push → deploy to GCP (manual dispatch)
-│   └── rollback.yml              # Rollback to previous image (manual dispatch)
+│   ├── ci.yml                    # Lint + Docker build dry-run (PRs to staging/main)
+│   ├── deploy-cloudrun.yml       # Build → push → deploy to Cloud Run (auto on staging push)
+│   ├── rollback-cloudrun.yml     # Rollback Cloud Run to previous revision
+│   ├── deploy-gce.yml            # (archived) GCE deploy — kept for reference
+│   └── rollback.yml              # (archived) GCE rollback — kept for reference
 ├── Dockerfile                    # Node 22, OpenClaw, Homebrew, pnpm
 ├── entrypoint.sh                 # Volume permissions, Homebrew persistence, GCP creds
 ├── package.json                  # Root deps + npm scripts
@@ -191,32 +193,113 @@ Optional browser terminal at `/tui` (requires `ENABLE_WEB_TUI=true`). Uses `node
 | `TUI_IDLE_TIMEOUT_MS` | No | 300000 | TUI idle timeout (5 min) |
 | `TUI_MAX_SESSION_MS` | No | 1800000 | TUI max session (30 min) |
 
+## Branch Strategy
+
+**Feature → staging → main** (same as all Frontiers repos)
+
+| Branch | Environment | Deploy trigger |
+|--------|-------------|---------------|
+| `feature/*` | — | CI runs lint + Docker build dry-run on PR |
+| `staging` | Staging Cloud Run | Auto-deploy on push via `deploy-cloudrun.yml` |
+| `main` | Production Cloud Run | Manual dispatch of `deploy-cloudrun.yml` |
+
+PRs always target `staging`. Production deploys happen by merging `staging → main` or manual dispatch.
+
 ## CI/CD (GitHub Actions)
 
-### deploy.yml (Manual Dispatch)
+### deploy-cloudrun.yml (Primary)
 1. Build Docker image, tag with commit SHA + `latest`
 2. Push to GCP Artifact Registry
-3. SSH into GCP instance, pull image, stop old container, start new one
-4. Health check: poll `http://localhost:8080/` (30 attempts, 5s interval)
-5. Cleanup old images (keeps latest 10)
+3. `gcloud run deploy` with GCS FUSE volume mount at `/data`
+4. Secrets injected from GCP Secret Manager
+5. Health check: curl `/healthz` (12 attempts, 10s interval)
+6. Cleanup old images (keeps latest 10)
 
-**Requires**: Workload Identity Federation (keyless auth), per-environment secrets (`GCE_INSTANCE_NAME`, `GCE_INSTANCE_ZONE`, `ENV_VARS`), and repo variables (`GCP_PROJECT_ID`, `GCP_REGION`, etc.)
+**Auto-triggers** on push to `staging` branch. Manual dispatch for `production`.
 
-### rollback.yml (Manual Dispatch)
-Roll back to a previous commit SHA's image without rebuilding.
+**Cloud Run config**:
+- Gen2 execution environment (required for GCS FUSE)
+- `--no-cpu-throttling` + `--min-instances=1` (always-on for WebSocket)
+- `--session-affinity` (sticky sessions for bot connections)
+- Staging: 1Gi memory, max 2 instances
+- Production: 2Gi memory, max 3 instances
+
+### rollback-cloudrun.yml (Manual Dispatch)
+Routes 100% traffic to a previous revision via `gcloud run services update-traffic`.
+If no revision specified, auto-selects the second-most-recent revision.
 
 ### ci.yml
-Lint + Docker build dry-run. Auto-trigger currently disabled.
+Lint + Docker build dry-run. Triggers on PRs to `staging` or `main`, and on push to `staging`.
+
+### deploy-gce.yml / rollback.yml (Archived)
+Original GCE SSH-based deployment. Kept for reference — use Cloud Run workflows instead.
+
+## Cloud Run Deployment
+
+### Persistent State (GCS FUSE)
+Cloud Run instances mount a GCS bucket at `/data` for persistent state:
+
+| Environment | GCS Bucket | Secret Prefix |
+|-------------|-----------|---------------|
+| Staging | `gs://frontiersai-bot-data-staging` | `stg` |
+| Production | `gs://frontiersai-bot-data-production` | `prd` |
+
+Bucket contents:
+```
+/data/
+├── .openclaw/           # OpenClaw config (openclaw.json, etc.)
+├── workspace/           # Bot personality + skills (seeded from image on first boot)
+├── .linuxbrew/          # Homebrew installation (persisted across restarts)
+├── resources/           # Credentials (GCP keys, etc.)
+└── gateway.token        # Bearer token for gateway auth
+```
+
+### Secrets (GCP Secret Manager)
+| Secret Name | Purpose |
+|-------------|---------|
+| `stg-frontiersai-bot-setup-password` | Setup wizard auth (staging) |
+| `stg-frontiersai-bot-gateway-token` | Gateway bearer token (staging) |
+| `prd-frontiersai-bot-setup-password` | Setup wizard auth (production) |
+| `prd-frontiersai-bot-gateway-token` | Gateway bearer token (production) |
+
+### Cloud Run Environment Variables
+Set automatically by `deploy-cloudrun.yml`:
+- `CLOUD_RUN=true` — enables Cloud Run mode in entrypoint.sh (skips POSIX permission ops)
+- `PORT=8080`
+- `OPENCLAW_STATE_DIR=/data/.openclaw`
+- `OPENCLAW_WORKSPACE_DIR=/data/workspace`
+
+### First Boot
+On first deploy, the entrypoint seeds `/data/workspace/` from baked-in defaults (`/app/workspace-defaults/`). Subsequent restarts preserve any runtime customizations.
+
+### GitHub Variables Required
+| Variable | Value |
+|----------|-------|
+| `GCP_PROJECT_ID_STAGING` | `frontiersmarketplace-staging` |
+| `GCP_PROJECT_ID_PRODUCTION` | `frontiersmarketplace` |
+| `GCP_REGION` | `us-central1` |
+| `GCP_ARTIFACT_REGISTRY` | `us-central1-docker.pkg.dev/frontiersmarketplace-staging/frontiersai-bot` |
+| `WIF_PROVIDER` | Workload Identity Federation provider |
+| `WIF_SERVICE_ACCOUNT` | Deploy service account email |
+
+### Service Accounts
+| Environment | Service Account |
+|-------------|----------------|
+| Staging | `frontiersai-bot-sa@frontiersmarketplace-staging.iam.gserviceaccount.com` |
+| Production | `frontiersai-bot-sa@frontiersmarketplace.iam.gserviceaccount.com` |
+
+Required roles: `roles/storage.objectUser`, `roles/secretmanager.secretAccessor`
 
 ## Docker & Entrypoint
 
-**Dockerfile**: Node 22 base → system packages → OpenClaw (npm global) → Homebrew → pnpm install (production) → copy source. Creates non-root `openclaw` user. Health check on `/setup/healthz`.
+**Dockerfile**: Node 22 base → system packages → OpenClaw (npm global) → Homebrew → pnpm install (production) → copy source + workspace defaults. Creates non-root `openclaw` user. Health check on `/setup/healthz`.
 
 **entrypoint.sh**:
-1. Fix `/data` volume ownership
+1. If `CLOUD_RUN=true`: skip `chown`/`chmod` (GCS FUSE ignores POSIX permissions)
 2. Persist Homebrew to volume (`/data/.linuxbrew` ← symlink)
-3. Set `GOOGLE_APPLICATION_CREDENTIALS` if key file exists in `/data/resources/`
-4. Start server as `openclaw` user via `gosu`
+3. First-boot workspace init: seed `/data/workspace/` from `/app/workspace-defaults/` if missing
+4. Set `GOOGLE_APPLICATION_CREDENTIALS` if key file exists in `/data/resources/`
+5. Start server as `openclaw` user via `gosu`
 
 ## Common Development Tasks
 
@@ -249,6 +332,8 @@ Check logs for: `[gateway] starting with command: ...`, `[gateway] ready at <end
 5. **WebSocket auth requires proxy event handlers** → direct `req.headers` modification fails for WS upgrades; must use `proxyReqWs` event
 6. **Control UI needs `allowInsecureAuth=true`** → bypasses pairing (wrapper handles auth)
 7. **Homebrew persisted to volume** → `entrypoint.sh` symlinks `/data/.linuxbrew` back on restart
-8. **Staging/Production are fully isolated** → never share env files, tokens, or volumes between environments
+8. **Staging/Production are fully isolated** → separate GCS buckets, secrets, and service accounts
+9. **Cloud Run uses GCS FUSE** → volume is eventually consistent; writes may take ~1s to propagate
+10. **Cloud Run requires gen2 execution** → gen1 doesn't support volume mounts
 9. **Setup rate limiting** → 50 req/IP/60s on `/setup` routes to prevent brute-force
 10. **Single TUI session** → concurrent access returns 409 Conflict
