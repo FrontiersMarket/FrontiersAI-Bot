@@ -195,12 +195,8 @@ jobs:
             --update-secrets="SETUP_PASSWORD=${SECRET_PREFIX}-frontiersai-bot-setup-password:latest,OPENCLAW_GATEWAY_TOKEN=${SECRET_PREFIX}-frontiersai-bot-gateway-token:latest" \
             --add-volume=name=data-vol,type=cloud-storage,bucket="${GCS_BUCKET}" \
             --add-volume-mount=volume=data-vol,mount-path=/data \
-            --startup-probe-path=/healthz \
-            --startup-probe-initial-delay=10 \
-            --startup-probe-period=5 \
-            --startup-probe-failure-threshold=12 \
-            --liveness-probe-path=/healthz \
-            --liveness-probe-period=30 \
+            --startup-probe="httpGet.path=/healthz,initialDelaySeconds=10,periodSeconds=5,failureThreshold=12" \
+            --liveness-probe="httpGet.path=/healthz,periodSeconds=30" \
             --allow-unauthenticated
 
       - name: Get service URL
