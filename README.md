@@ -183,6 +183,81 @@ Each environment (staging, production) runs as a separate Docker container on it
 
 The `/data` volume **must persist** across container restarts to retain config, credentials, and gateway token.
 
+## Remote Development & Debugging (GCP)
+
+These steps let you SSH into the production VM and work directly inside the running container — useful for live debugging, inspecting config, or editing workspace files.
+
+### 1. SSH into the VM
+
+```bash
+gcloud compute ssh frontiersai-bot-production --zone=us-central1-a --project=frontiersmarketplace
+```
+
+To set up a persistent SSH alias in `~/.ssh/config` (run once):
+
+```bash
+gcloud compute config-ssh --project=frontiersmarketplace
+# Adds a host like: frontiersai-bot-production.us-central1-a.frontiersmarketplace
+ssh frontiersai-bot-production.us-central1-a.frontiersmarketplace
+```
+
+### 2. Shell into the Docker container
+
+From the VM:
+
+```bash
+# As root:
+docker exec -it frontiersai-bot bash
+
+# As the openclaw user (recommended):
+docker exec -it frontiersai-bot su - openclaw
+
+# Run a one-off command:
+docker exec -it frontiersai-bot su - openclaw -c "openclaw models list"
+```
+
+### 3. View container logs
+
+```bash
+# From the VM:
+docker logs -f frontiersai-bot
+```
+
+### 4. Key paths inside the container
+
+| Path | Contents |
+|------|----------|
+| `/app/` | App source code |
+| `/data/workspace/` | Bot personality & skill files (persistent volume) |
+| `/data/resources/` | Credentials (GCP key, etc.) |
+| `/home/openclaw/.openclaw/` | OpenClaw state & config (`openclaw.json`) |
+
+> **Heads up:** Files edited directly inside the container (outside `/data/`) are ephemeral — they are lost on container restart. For persistent changes, edit files in the repo and redeploy, or edit files inside `/data/`.
+
+### 5. VS Code / Cursor — Edit files remotely
+
+**Required extensions:**
+- [Remote - SSH](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-ssh) — connect to the VM
+- [Dev Containers](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers) — attach to the Docker container
+
+**Step 1 — Connect to the VM:**
+
+1. Run `gcloud compute config-ssh --project=frontiersmarketplace` (once, to populate `~/.ssh/config`)
+2. In VS Code/Cursor: `Cmd+Shift+P` → **Remote-SSH: Connect to Host**
+3. Select `frontiersai-bot-production.us-central1-a.frontiersmarketplace`
+4. You're now browsing and editing the VM filesystem directly
+
+**Step 2 — Attach to the running container (optional):**
+
+_Option A — Command Palette (while connected to the VM via Remote-SSH):_
+1. `Cmd+Shift+P` → **Dev Containers: Attach to Running Container**
+2. Select `/frontiersai-bot`
+3. A new window opens inside the container filesystem
+
+_Option B — Docker extension panel (while connected to VM):_
+1. Open the Docker panel (whale icon in the sidebar)
+2. Right-click `frontiersai-bot` → **Attach Visual Studio Code**
+
 ## FAQ
 
 **How do I access the setup page?**
