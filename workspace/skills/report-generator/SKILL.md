@@ -36,8 +36,13 @@ Camera-detected event overview for a specific ranch. Include: ranch info text, c
 
 ## Workflow
 
-### Step 0: Capture channel context
-Note the channel type, channel ID, and thread ID (if in a thread) from the incoming request. All output goes back to that exact channel/thread.
+### Step 0: Capture channel context — do this FIRST
+Before anything else, extract and store:
+- **Channel type**: `slack` / `discord` / etc.
+- **Channel ID**: the exact channel or DM ID (e.g. `C0123456789`)
+- **Thread timestamp** (if the request came in a thread): the `ts` of the parent message
+
+If you cannot determine the channel ID from the request context, ask the user before proceeding. Do not assume or guess — uploading to the wrong channel is worse than asking.
 
 ### Step 1: Gather data
 Pull all required data using the **alloydb-sync** skill before generating the report. Query exactly what the report needs — livestock records, weight history, BCS, groups, land, vaccination records, etc. Never build a report with incomplete or placeholder data.
@@ -54,11 +59,15 @@ subagents spawn --label report-<slug> --task "node {baseDir}/report_generator.js
 ```
 
 ### Step 3: Send the file to the user's channel
-Parse `FILE_PATH:` from the output, then immediately upload the file to the same channel/thread the request came from.
+Parse `FILE_PATH:` from the generator output, then immediately upload to the channel captured in Step 0.
 
-**Slack (primary):**
+**Slack:**
 ```
-message send --channel slack -t <CHANNEL_ID> [--thread-id <THREAD_TS>] --media "<file_path>" --text "<one-line summary>"
+message send --channel slack -t <CHANNEL_ID> --media "<file_path>" --text "<one-line summary>"
+```
+If the request was in a thread, add `--thread-id <THREAD_TS>`:
+```
+message send --channel slack -t <CHANNEL_ID> --thread-id <THREAD_TS> --media "<file_path>" --text "<one-line summary>"
 ```
 
 **Discord:**
@@ -66,10 +75,11 @@ message send --channel slack -t <CHANNEL_ID> [--thread-id <THREAD_TS>] --media "
 message send --channel discord -t <CHANNEL_ID> --media "<file_path>" --text "<one-line summary>"
 ```
 
-- Always use the `--media` flag — this uploads the file directly into the conversation
-- The summary text should be one concise sentence describing what the report contains
+- `--media` is what triggers the file upload — do not omit it
+- `--text` is the one-sentence summary shown alongside the file
 - **Never** tell the user where the file is stored or reference any internal path
 - **Never** ask the user to download or find the file themselves — it must arrive in the chat
+- If the upload command fails, retry once before reporting an error
 
 ### Step 4: Clean up
 ```bash
@@ -92,8 +102,8 @@ Always apply `WHERE is_deleted = false` on all entity and event tables (except `
 
 ## Communication Rules
 
-- **One message max before delivery**: If you need to signal work is starting, send at most one brief message (e.g. "Pulling data and generating your report..."). Do not narrate each step.
-- **On success**: Send the file with a single short summary. Nothing else.
+- **Acknowledge before starting**: Send one brief message before doing any work (e.g. "Generating your report…"). This is the only message before the file arrives.
+- **On success**: Upload the file with a single short summary sentence. Nothing else.
 - **On error**: Report only the actionable issue (e.g. "No records found for Tag #1042"). Do not expose stack traces, file paths, or internal tool output.
 - Never reference internal file locations, `results/` directories, or temp paths in any user-facing message.
 

@@ -22,6 +22,8 @@
 - Do NOT add a "Done!" message after the actual answer
 - Fix minor errors silently — never explain them mid-task
 
+**Exception — long-running tasks (>10s expected):** Send ONE brief acknowledgement before starting work (e.g. "Generating your report…" / "Pulling that data…"). Nothing more until the result is ready.
+
 **Work silently. Deliver once.**
 
 ## Privacy — NON-NEGOTIABLE

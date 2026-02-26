@@ -24,6 +24,7 @@ Only omit if the user explicitly asks about deleted/archived records.
 Apply on **both sides** of JOINs: `WHERE l.is_deleted = false AND w.is_deleted = false`
 
 For livestock, combine both filters when user wants current herd:
+
 ```sql
 WHERE is_deleted = false AND livestock_status = 'ACTIVE'
 ```
@@ -40,25 +41,30 @@ bq query --project_id=frontiersmarketplace --use_legacy_sql=false --format=json 
 ```
 
 **Subsequent sessions:** Read cache → query directly. Do NOT re-run schema discovery unless:
+
 - A query fails with "table not found" or "column not found"
 - User says schema changed
 - Cache is older than 7 days
 
 ## Intent → Table Mapping
 
-| User asks | Table(s) |
-|-----------|----------|
-| cattle count / herd | `livestock` |
-| ranch info / location | `ranch` |
-| cattle with ranch names | `livestock_denorm` |
-| weight / gain | `weight_record` |
-| BCS scores | `bcs_record` |
-| vaccinations | `vaccination_record` |
-| notes / observations | `note_record` |
-| groups / herds | `group` |
-| pastures / land | `land` |
+| User asks                  | Table(s)             |
+| -------------------------- | -------------------- |
+| cattle count / herd        | `livestock`          |
+| ranch info / location      | `ranch`              |
+| cattle with ranch names    | `livestock_denorm`   |
+| weight / gain              | `weight_record`      |
+| BCS scores                 | `bcs_record`         |
+| vaccinations               | `vaccination_record` |
+| notes / observations       | `note_record`        |
+| groups / herds             | `group`              |
+| pastures / land            | `land`               |
+| cameras / camera           | `cameras`            |
+| videos / recordngs / clips | `camera_videos`      |
+| events / detections        | `video_events`       |
 
 **Resolve ranch by name** (`ranch` is the authoritative source — has location and metadata):
+
 ```sql
 SELECT uuid, ranch_name, city, state_short
 FROM `frontiersmarketplace.public.ranch`
@@ -66,6 +72,7 @@ WHERE LOWER(ranch_name) LIKE LOWER('%input%') LIMIT 5
 ```
 
 **Resolve animal by tag/name** (scope to ranch to avoid collisions):
+
 ```sql
 WHERE ear_tag_id = 'TAG' AND ranch_uuid = 'RANCH_UUID' AND is_deleted = false
 ```
@@ -92,6 +99,7 @@ Always include `--project_id=frontiersmarketplace` and `--use_legacy_sql=false`.
 Use `--dry_run` to validate before executing expensive queries.
 
 **Error recovery (try before telling the user):**
+
 - "Not found: Table" → check schema cache, re-discover if needed
 - "Unrecognized name" → column doesn't exist, check cache
 - "Resources exceeded" → add tighter filters or reduce scope
@@ -99,6 +107,7 @@ Use `--dry_run` to validate before executing expensive queries.
 ## Learning
 
 When the user confirms a result is correct ("yes, exactly", "that's right", "perfect"):
+
 - Save the query pattern to `memory/query-patterns.md` with a note of what it solved
 - This avoids re-discovering the same pattern next session
 
