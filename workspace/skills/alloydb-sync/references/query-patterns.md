@@ -4,6 +4,15 @@ Ready-to-use SQL templates for the most frequent data requests. Replace placehol
 
 All queries use `--use_legacy_sql=false --format=json`.
 
+> **Column name corrections (verified from migrations):**
+> - `weight_record`: date = `date_weighed` (not `recorded_at`); no `weight_unit` column
+> - All other record tables: date = `record_date` (not `recorded_at`)
+> - `vaccination_record`: vaccine = `vaccine` (not `vaccine_name`)
+> - `note_record`: content = `note` (not `content`); no `author` or `note_type`
+> - `livestock`: status = `status` enum (may appear as `livestock_status` in BQ)
+> - `bcs_record`: `score` is FLOAT64 — cast when grouping
+> - `video_events`: timestamps are FLOAT64 Unix epochs; use `event_date` (DATE) for date filters
+
 ---
 
 ## Ranch Resolution

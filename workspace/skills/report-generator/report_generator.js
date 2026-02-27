@@ -424,8 +424,7 @@ async function generateReport(data) {
 
     // ─── Save ─────────────────────────────────────────────────────────────────
     const pdfBytes = await doc.save();
-    const resultsDir = path.join(__dirname, 'results');
-    await fs.mkdir(resultsDir, { recursive: true });
+    const resultsDir = '/tmp';
 
     const slug = (data.title || 'report').toLowerCase().replace(/[^a-z0-9]+/g, '_').slice(0, 40);
     const fileName = `${slug}_${Date.now()}.pdf`;

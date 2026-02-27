@@ -2,9 +2,7 @@
 
 Project/Dataset: `frontiersmarketplace.public`
 
-> **Note:** This is a baseline reference. The bot should discover the actual live schema via
-> `INFORMATION_SCHEMA.COLUMNS` and cache it in `memory/bq-schema.md`. If a table or column
-> listed here doesn't exist in your environment, trust the live discovery over this file.
+> **Note:** This is a baseline reference. **Always prefer `memory/bq-schema.md` over this file** — it was rebuilt from actual knex migrations and is more accurate. Key corrections vs. older docs: `weight_record` uses `date_weighed` (not `recorded_at`); all other record tables use `record_date` (not `recorded_at`); `vaccination_record` column is `vaccine` (not `vaccine_name`); `note_record` column is `note` (not `content`); livestock status column is `status` (may be `livestock_status` in BQ).
 
 ---
 

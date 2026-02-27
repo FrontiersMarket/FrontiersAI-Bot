@@ -48,47 +48,74 @@ If you cannot determine the channel ID from the request context, ask the user be
 Pull all required data using the **alloydb-sync** skill before generating the report. Query exactly what the report needs — livestock records, weight history, BCS, groups, land, vaccination records, etc. Never build a report with incomplete or placeholder data.
 
 ### Step 2: Build report JSON and generate
-Write the structured JSON to a temp file, run the generator, then move the output to `/tmp/` (the allowed media directory for uploads):
+Write the structured JSON to a temp file and run the generator:
 
 ```bash
 echo '<json_data>' > /tmp/report_data.json
 node /data/workspace/skills/report-generator/report_generator.js --data_file '/tmp/report_data.json'
 ```
 
-The script prints `FILE_PATH:/path/to/results/<filename>.pdf` when done. Immediately copy it to `/tmp/`:
-
-```bash
-cp <FILE_PATH> /tmp/<filename>.pdf
-```
-
-Use `/tmp/<filename>.pdf` as the upload path in Step 3.
+The script prints `FILE_PATH:/tmp/<filename>.pdf` when done. Use that path directly in Step 3 — no copy needed.
 
 ### Step 3: Send the file to the user's channel
-Upload from `/tmp/` to the channel captured in Step 0.
 
-**Slack:**
+**Slack — upload via Slack API (3 steps, all bash):**
+
+Fill in the variables at the top, then run the whole block at once:
+
+```bash
+# ── Variables — fill these in ──────────────────────────────────────────────
+FILE_PATH="/tmp/<filename>.pdf"
+FILE_NAME="<filename>.pdf"
+CHANNEL_ID="<CHANNEL_ID>"
+COMMENT="<one-line summary>"
+THREAD_TS=""   # set to parent message ts if replying in a thread, else leave empty
+
+# ── Read Slack bot token from OpenClaw config ──────────────────────────────
+OPENCLAW_DIR="${OPENCLAW_STATE_DIR:-/home/openclaw/.openclaw}"
+SLACK_TOKEN=$(node -e "const c=require('$OPENCLAW_DIR/openclaw.json');process.stdout.write(c.channels.slack.botToken||'')")
+
+# ── Step A: Get upload URL + file ID ──────────────────────────────────────
+STEP_A=$(curl -s -X POST "https://slack.com/api/files.getUploadURLExternal" \
+  -H "Authorization: Bearer $SLACK_TOKEN" \
+  -F "filename=$FILE_NAME" \
+  -F "length=$(stat -c%s $FILE_PATH)")
+UPLOAD_URL=$(printf '%s' "$STEP_A" | node -e "let b='';process.stdin.on('data',d=>b+=d);process.stdin.on('end',()=>process.stdout.write(JSON.parse(b).upload_url||''))")
+FILE_ID=$(printf '%s' "$STEP_A" | node -e "let b='';process.stdin.on('data',d=>b+=d);process.stdin.on('end',()=>process.stdout.write(JSON.parse(b).file_id||''))")
+echo "Step A — file_id: $FILE_ID"
+
+# ── Step B: Upload file bytes to the pre-signed URL ───────────────────────
+curl -s -X POST "$UPLOAD_URL" \
+  -H "Content-Type: application/octet-stream" \
+  --data-binary "@$FILE_PATH"
+echo "Step B — bytes uploaded"
+
+# ── Step C: Complete upload and share in channel ───────────────────────────
+STEP_C=$(FID="$FILE_ID" CID="$CHANNEL_ID" CMT="$COMMENT" TTS="$THREAD_TS" node -e "
+  const o={files:[{id:process.env.FID}],channel_id:process.env.CID,initial_comment:process.env.CMT};
+  if(process.env.TTS) o.thread_ts=process.env.TTS;
+  process.stdout.write(JSON.stringify(o));
+")
+RESULT=$(curl -s -X POST "https://slack.com/api/files.completeUploadExternal" \
+  -H "Authorization: Bearer $SLACK_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "$STEP_C")
+echo "Step C — result: $RESULT"
 ```
-message send --channel slack -t <CHANNEL_ID> --media "/tmp/<filename>.pdf" --text "<one-line summary>"
-```
-If in a thread:
-```
-message send --channel slack -t <CHANNEL_ID> --thread-id <THREAD_TS> --media "/tmp/<filename>.pdf" --text "<one-line summary>"
-```
+
+Check the `$RESULT` output: if `"ok":true` the file was sent. If `"ok":false`, read the `"error"` field and retry once before reporting the error to the user.
 
 **Discord:**
-```
-message send --channel discord -t <CHANNEL_ID> --media "/tmp/<filename>.pdf" --text "<one-line summary>"
-```
+Use the `message send` OpenClaw tool (not a shell command):
+- `--channel discord -t <CHANNEL_ID> --media "/tmp/<filename>.pdf" --text "<one-line summary>"`
 
-- `--media` is what triggers the file upload — do not omit it
-- `--text` is the one-sentence summary shown alongside the file
+**Rules:**
 - **Never** tell the user where the file is stored or reference any internal path
 - **Never** ask the user to download or find the file themselves — it must arrive in the chat
-- If the upload command fails, retry once before reporting an error
 
 ### Step 4: Clean up
 ```bash
-rm -f /tmp/report_data.json /tmp/<filename>.pdf <original_FILE_PATH>
+rm -f /tmp/report_data.json /tmp/<filename>.pdf
 ```
 
 ## Data Gathering (alloydb-sync Integration)
@@ -166,7 +193,7 @@ Never reference internal file locations, `results/` directories, or temp paths i
 On success, the generator prints:
 ```
 <Report Title> — N page(s)
-FILE_PATH:/path/to/results/<filename>.pdf
+FILE_PATH:/tmp/<filename>.pdf
 ```
 
 Parse `FILE_PATH:` to get the path, upload via `--media`, then delete the file. This path is never shared with the user.
