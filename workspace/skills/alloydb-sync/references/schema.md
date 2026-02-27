@@ -171,27 +171,6 @@ General notes and observations attached to livestock.
 
 ---
 
-## Denormalized Views
-
-### livestock_denorm
-
-Pre-joined view that includes ranch names alongside livestock data. **Prefer this for queries that need ranch names** — avoids manual joins.
-
-| Column | Type | Description |
-|--------|------|-------------|
-| ranch_name | STRING | Ranch display name |
-| ranch_uuid | STRING | Ranch UUID |
-| uuid | STRING | Livestock UUID |
-| ear_tag_id | STRING | Tag number |
-| name | STRING | Animal name |
-| livestock_status | STRING | Status |
-| sex | STRING | Sex |
-| breed | STRING | Breed |
-
-> This view may contain additional denormalized fields. Check `INFORMATION_SCHEMA` for the full list.
-
----
-
 ## Relationships
 
 ```
@@ -214,8 +193,8 @@ ranch (uuid = ranch_uuid everywhere)
 ## Important Notes
 
 1. **Soft deletes (`is_deleted`) — ALWAYS FILTER** — Almost every table has an `is_deleted` BOOLEAN column. You **must** include `WHERE is_deleted = false` on every query by default. Rows with `is_deleted = true` are soft-deleted (removed in the app but kept for audit). Including them produces inflated counts, ghost records, and wrong data. Only omit this filter when the user explicitly asks about deleted/archived records. Apply this filter on **both sides** of JOINs when both tables have the column.
-2. **`ranch` is the ranch source of truth** — Use it for ranch name resolution, location, metadata, and owner lookups. It does NOT have `is_deleted`. For queries that need ranch name alongside livestock data, you can either JOIN `ranch` or use the `livestock_denorm` view.
+2. **`ranch` is the ranch source of truth** — Use it for ranch name resolution, location, metadata, and owner lookups. It does NOT have `is_deleted`. For queries that need ranch name alongside livestock data, JOIN `ranch` on `ranch_uuid`.
 3. **Status filtering** — `livestock_status` on `livestock` controls lifecycle state. Default to `ACTIVE` unless user asks otherwise. This is **in addition to** `is_deleted = false`, not a replacement for it.
 4. **UUIDs everywhere** — All PKs and FKs are UUID strings. Never assume integer IDs.
 5. **Timestamps** — `created_at` = when the DB record was created; `recorded_at` = when the event actually happened in the real world. Use `recorded_at` for chronological queries.
-6. **Table naming** — No prefix. Entity tables are named directly (e.g., `ranch`, `livestock`, `group`, `land`). Record/event tables follow `<entity>_record` pattern. Views have no prefix (e.g., `livestock_denorm`).
+6. **Table naming** — No prefix. Entity tables are named directly (e.g., `ranch`, `livestock`, `group`, `land`). Record/event tables follow `<entity>_record` pattern.

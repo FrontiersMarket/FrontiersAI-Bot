@@ -64,7 +64,6 @@ bq query --project_id=frontiersmarketplace --use_legacy_sql=false --format=json 
 | ------------------------- | -------------------- | ---------------------------------------------------------------- |
 | cattle count / herd       | `livestock`          | Filter `is_deleted=false` + `ACTIVE`                             |
 | ranch info / location     | `ranch`              | No `is_deleted` column                                           |
-| cattle with ranch names   | `livestock_denorm`   | Pre-joined view — avoids manual JOIN                             |
 | weight / gain             | `weight_record`      | Use `recorded_at` for chronology                                 |
 | BCS scores                | `bcs_record`         | Cast score to INT64 when grouping                                |
 | vaccinations              | `vaccination_record` | Use `administered_at` for chronology                             |
@@ -126,12 +125,6 @@ Use this to choose the right approach before writing SQL.
 | Distribution (e.g., BCS buckets) | `GROUP BY` + `COUNT(*)`                                    |
 | Ranked list (top gainers, etc.)  | Window function + `ORDER BY`                               |
 | Missing data (animals without X) | `NOT IN (SELECT ...)` or `LEFT JOIN ... WHERE ... IS NULL` |
-
-### Join vs. denorm view
-
-- Use `livestock_denorm` when you need ranch name + livestock data with no other joins
-- Use `livestock` + explicit `JOIN ranch` when you also need other ranch columns (e.g., state, city)
-- Use `livestock` alone when ranch name is not in the output
 
 ---
 
@@ -364,7 +357,6 @@ DATE(recorded_at)
 - **Never `SELECT *`** — specify only needed columns
 - **Always `LIMIT`** — 50 for lists, 1 for details/latest, 10 for exploration, 100+ only for export
 - **Filter by `ranch_uuid` first** — critical for scan performance; it's the universal partition key
-- **Use `livestock_denorm`** when you need ranch names alongside livestock data (avoids join)
 - **Aggregate server-side** — use SQL `COUNT/AVG/MAX/MIN/SUM`, never post-process in code
 - **LEFT JOIN for nullable FKs** — `group_uuid`, `land_uuid`, `sire_uuid`, `dam_uuid` can be NULL
 - **INNER JOIN only** when you know both sides always have a match (e.g., `weight_record → livestock`)
