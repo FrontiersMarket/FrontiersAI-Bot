@@ -67,15 +67,35 @@ LIMIT 10
 
 ## Response Format
 
-Present the images using Markdown syntax so they render in the chat interface.
+Adapt the format based on the channel/platform the user is messaging from.
+
+### Slack
+
+When the user is reaching from **Slack**, do NOT use Markdown image syntax (`![](url)`) — it does not render inline images in Slack.
+
+Instead, respond with:
+1. A short intro line (e.g. *"Here are the photos for Tag #1042 (Bella):"*)
+2. Each image URL on its **own line**, as a plain URL with no surrounding brackets or formatting. Slack will auto-unfurl these as inline image previews.
+
+**Slack example output:**
+```
+Here are the photos for Tag #1042 (Bella):
+
+https://storage.googleapis.com/.../image1.jpg
+https://storage.googleapis.com/.../image2.jpg
+https://storage.googleapis.com/.../image3.jpg
+```
+
+### Other Platforms (Discord, web, etc.)
+
+Present the images using standard Markdown image syntax so they render inline.
 
 **Format:**
 ```markdown
 ### Photos for [Animal Name/Tag]
 
-![[Date]] [Title/Description](URL)
-![[Date]] [Title/Description](URL)
-...
+![2024-01-15](URL)
+*Uploaded Jan 15, 2024*
 ```
 
 **Example Output:**
