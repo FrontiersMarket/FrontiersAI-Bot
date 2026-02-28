@@ -240,6 +240,60 @@ Check logs for: `[gateway] starting with command: ...`, `[gateway] ready at <end
 2. Reference it in `workspace/TOOLS.md` or `workspace/AGENTS.md`
 3. Skill files auto-sync to container via workspace watcher
 
+## Production Operations (GCP)
+
+### Accessing the Control UI / TUI remotely
+
+The gateway runs inside the Docker container and is only accessible via the wrapper (port 8080). Use an SSH tunnel to access it securely:
+
+```bash
+# On your local machine — keep this terminal open
+ssh -N -L 19000:127.0.0.1:8080 frontiersai-bot-production
+```
+
+Then open:
+- **TUI**: `http://localhost:19000/tui`
+- **Control UI**: `http://localhost:19000/openclaw`
+
+### Device pairing (required on first access and after container rebuilds)
+
+OpenClaw requires explicit device approval before any client can connect to the gateway. This must be done after initial setup and any time a new browser/device connects.
+
+```bash
+# List pending pairing requests
+docker exec -it frontiersai-bot su - openclaw -c "openclaw devices list"
+
+# Approve each pending request by ID
+docker exec -it frontiersai-bot su - openclaw -c "openclaw devices approve <request-id>"
+```
+
+Then refresh the browser. Repeat for each pending request shown.
+
+> Note: `allowInsecureAuth=true` does **not** bypass device pairing — it only removes the pairing UI redirect. Devices must still be approved via CLI.
+
+### Manual redeploy (without GitHub Actions)
+
+```bash
+# On local machine — build for amd64 (required on Apple Silicon)
+docker build --platform linux/amd64 -t frontiersai-bot:latest .
+docker save frontiersai-bot:latest | gzip > /tmp/bot-image.tar.gz
+gcloud compute scp /tmp/bot-image.tar.gz frontiersai-bot-production:~ --zone=us-central1-a --project=frontiersmarketplace
+
+# On VM
+docker load < bot-image.tar.gz
+docker restart frontiersai-bot
+```
+
+### VM info
+
+| Resource | Value |
+|----------|-------|
+| Project | `frontiersmarketplace` |
+| Instance | `frontiersai-bot-production` |
+| Zone | `us-central1-a` |
+| Static IP | `34.136.213.183` |
+| Data disk | `/mnt/disks/data` (persisted via systemd mount unit) |
+
 ## Quirks & Gotchas
 
 1. **Gateway token must be stable across redeploys** → persisted to volume if not in env
@@ -247,7 +301,7 @@ Check logs for: `[gateway] starting with command: ...`, `[gateway] ready at <end
 3. **Gateway readiness polls multiple endpoints** (`/openclaw`, `/`, `/health`) → some OpenClaw builds only expose certain routes
 4. **Discord bots require MESSAGE CONTENT INTENT** → documented in setup wizard
 5. **WebSocket auth requires proxy event handlers** → direct `req.headers` modification fails for WS upgrades; must use `proxyReqWs` event
-6. **Control UI needs `allowInsecureAuth=true`** → bypasses pairing (wrapper handles auth)
+6. **Control UI needs `allowInsecureAuth=true`** → removes pairing UI redirect, but devices still require explicit CLI approval via `openclaw devices approve <id>`
 7. **Homebrew persisted to volume** → `entrypoint.sh` symlinks `/data/.linuxbrew` back on restart
 8. **Staging/Production are fully isolated** → never share env files, tokens, or volumes between environments
 9. **Setup rate limiting** → 50 req/IP/60s on `/setup` routes to prevent brute-force
