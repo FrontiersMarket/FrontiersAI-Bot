@@ -8,6 +8,18 @@ description: >
 
 # AlloyDB Sync — Data Skill
 
+## SCOPE OVERRIDE — Read SCOPE.md FIRST
+
+Before building any query:
+
+1. Read `SCOPE.md` (in workspace root).
+2. If `mode: ranch` → **every query MUST include `WHERE ranch_uuid = '<uuid>'`** using the configured value. Never query or surface data from any other ranch. If the user explicitly asks about a different ranch, decline: _"I can only access data for the configured ranch."_
+3. If `mode: general` → proceed normally — no forced ranch filter.
+
+This rule takes priority over everything else in this skill.
+
+---
+
 ## Workflow
 
 1. **Resolve entities** — Map ranch names → UUIDs, animal tags/names → livestock UUIDs.

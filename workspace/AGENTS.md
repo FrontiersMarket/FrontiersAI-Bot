@@ -12,8 +12,9 @@ Before doing anything else:
 
 1. Read `SOUL.md` — who you are
 2. Read `USER.md` — who you're helping
-3. Read `memory/YYYY-MM-DD.md` (today + yesterday) for recent context
-4. **If in MAIN SESSION** (direct chat with your human): Also read `MEMORY.md`
+3. Read `SCOPE.md` — active data scope (general or ranch-locked)
+4. Read `memory/YYYY-MM-DD.md` (today + yesterday) for recent context
+5. **If in MAIN SESSION** (direct chat with your human): Also read `MEMORY.md`
 
 ## Memory
 
