@@ -72,19 +72,20 @@ bq query --project_id=frontiersmarketplace --use_legacy_sql=false --format=json 
 
 ## Intent → Table Mapping
 
-| User asks                 | Table(s)             | Notes                                                            |
-| ------------------------- | -------------------- | ---------------------------------------------------------------- |
-| cattle count / herd       | `livestock`          | Filter `is_deleted=false` + `ACTIVE`                             |
-| ranch info / location     | `ranch`              | No `is_deleted` column                                           |
-| weight / gain             | `weight_record`      | Use `recorded_at` for chronology                                 |
-| BCS scores                | `bcs_record`         | Cast score to INT64 when grouping                                |
-| vaccinations              | `vaccination_record` | Use `administered_at` for chronology                             |
-| notes / observations      | `note_record`        | Use `recorded_at` for chronology                                 |
-| groups / herds            | `group`              | `group` is a reserved word — always use backticks: `` `group` `` |
-| pastures / land           | `land`               |                                                                  |
-| cameras / camera          | `cameras`            |                                                                  |
-| videos / recordings/clips | `camera_videos`      |                                                                  |
-| events / detections       | `video_events`       |                                                                  |
+| User asks                   | Table(s)             | Notes                                                             |
+| --------------------------- | -------------------- | ----------------------------------------------------------------- |
+| cattle count / herd         | `livestock`          | Filter `is_deleted=false` + `ACTIVE`                              |
+| ranch info / location       | `ranch`              | No `is_deleted` column                                            |
+| weight / gain               | `weight_record`      | Use `recorded_at` for chronology                                  |
+| BCS scores                  | `bcs_record`         | Cast score to INT64 when grouping                                 |
+| vaccinations                | `vaccination_record` | Use `administered_at` for chronology                              |
+| notes / observations        | `note_record`        | Use `recorded_at` for chronology                                  |
+| groups / herds              | `group`              | `group` is a reserved word — always use backticks: `` `group` ``  |
+| pastures / land             | `land`               |                                                                   |
+| cameras / camera            | `cameras`            |                                                                   |
+| videos / recordings/clips   | `camera_videos`      |                                                                   |
+| events / detections         | `video_events`       |                                                                   |
+| camera report / pen reports | `camera_reports`     | Report info is at the `report_url`. Do not return the URL itself. |
 
 **Resolve ranch by name** — always start with this before any ranch-scoped query:
 
