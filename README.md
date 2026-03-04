@@ -52,6 +52,7 @@ pnpm watch
 ```
 
 This runs two persistent tasks in parallel using Turborepo:
+
 - **dev:logs** — follows Docker container logs
 - **dev:watch** — watches `workspace/` for `.md` changes and auto-syncs to the container volume
 
@@ -71,15 +72,15 @@ pnpm down        # stop the container
 
 ### All scripts
 
-| Command | Description |
-|---------|-------------|
-| `pnpm docker:build` | Build the Docker image |
-| `pnpm up` | Start container (detached) |
-| `pnpm watch` | Turbo: follow logs + watch workspace |
-| `pnpm shell` | Bash shell into container |
-| `pnpm tui` | OpenClaw TUI in container |
-| `pnpm down` | Stop container |
-| `pnpm lint` | Syntax check |
+| Command             | Description                          |
+| ------------------- | ------------------------------------ |
+| `pnpm docker:build` | Build the Docker image               |
+| `pnpm up`           | Start container (detached)           |
+| `pnpm watch`        | Turbo: follow logs + watch workspace |
+| `pnpm shell`        | Bash shell into container            |
+| `pnpm tui`          | OpenClaw TUI in container            |
+| `pnpm down`         | Stop container                       |
+| `pnpm lint`         | Syntax check                         |
 
 ### Development without Docker
 
@@ -93,15 +94,15 @@ pnpm lint       # syntax check
 
 The bot's personality and behavior are defined by `.md` files in the [`workspace/`](workspace/) directory. These are the source-of-truth files checked into the repo:
 
-| File | Purpose |
-|------|---------|
-| `IDENTITY.md` | Bot name, personality, and self-description |
-| `SOUL.md` | Core behavior, tone, and communication style |
-| `AGENTS.md` | Agent definitions and capabilities |
-| `BOOTSTRAP.md` | Initial startup instructions |
-| `TOOLS.md` | Available tools and how to use them |
-| `USER.md` | User context and preferences |
-| `HEARTBEAT.md` | Periodic check-in behavior |
+| File           | Purpose                                      |
+| -------------- | -------------------------------------------- |
+| `IDENTITY.md`  | Bot name, personality, and self-description  |
+| `SOUL.md`      | Core behavior, tone, and communication style |
+| `AGENTS.md`    | Agent definitions and capabilities           |
+| `BOOTSTRAP.md` | Initial startup instructions                 |
+| `TOOLS.md`     | Available tools and how to use them          |
+| `USER.md`      | User context and preferences                 |
+| `HEARTBEAT.md` | Periodic check-in behavior                   |
 
 ### Editing workspace files
 
@@ -140,18 +141,18 @@ The bot requires a GCP service account JSON key file to access Google Cloud serv
 
 ## Environment variables
 
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `SETUP_PASSWORD` | Yes | — | Password to access `/setup` |
-| `OPENCLAW_STATE_DIR` | Recommended | `~/.openclaw` | Config + credentials directory |
-| `OPENCLAW_WORKSPACE_DIR` | Recommended | `<state>/workspace` | Agent workspace directory |
-| `OPENCLAW_GATEWAY_TOKEN` | No | auto-generated | Auth token for gateway |
-| `PORT` | No | `8080` | Wrapper HTTP port |
-| `INTERNAL_GATEWAY_PORT` | No | `18789` | Gateway internal port |
-| `OPENCLAW_ENTRY` | No | `/usr/local/lib/node_modules/openclaw/dist/entry.js` | Path to OpenClaw entry |
-| `ENABLE_WEB_TUI` | No | `false` | Enable browser terminal at `/tui` |
-| `TUI_IDLE_TIMEOUT_MS` | No | `300000` (5 min) | TUI idle disconnect timeout |
-| `TUI_MAX_SESSION_MS` | No | `1800000` (30 min) | TUI max session duration |
+| Variable                 | Required    | Default                                              | Description                       |
+| ------------------------ | ----------- | ---------------------------------------------------- | --------------------------------- |
+| `SETUP_PASSWORD`         | Yes         | —                                                    | Password to access `/setup`       |
+| `OPENCLAW_STATE_DIR`     | Recommended | `~/.openclaw`                                        | Config + credentials directory    |
+| `OPENCLAW_WORKSPACE_DIR` | Recommended | `<state>/workspace`                                  | Agent workspace directory         |
+| `OPENCLAW_GATEWAY_TOKEN` | No          | auto-generated                                       | Auth token for gateway            |
+| `PORT`                   | No          | `8080`                                               | Wrapper HTTP port                 |
+| `INTERNAL_GATEWAY_PORT`  | No          | `18789`                                              | Gateway internal port             |
+| `OPENCLAW_ENTRY`         | No          | `/usr/local/lib/node_modules/openclaw/dist/entry.js` | Path to OpenClaw entry            |
+| `ENABLE_WEB_TUI`         | No          | `false`                                              | Enable browser terminal at `/tui` |
+| `TUI_IDLE_TIMEOUT_MS`    | No          | `300000` (5 min)                                     | TUI idle disconnect timeout       |
+| `TUI_MAX_SESSION_MS`     | No          | `1800000` (30 min)                                   | TUI max session duration          |
 
 See [.env.example](.env.example) for full documentation.
 
@@ -225,18 +226,19 @@ docker logs -f frontiersai-bot
 
 ### 4. Key paths inside the container
 
-| Path | Contents |
-|------|----------|
-| `/app/` | App source code |
-| `/data/workspace/` | Bot personality & skill files (persistent volume) |
-| `/data/resources/` | Credentials (GCP key, etc.) |
-| `/home/openclaw/.openclaw/` | OpenClaw state & config (`openclaw.json`) |
+| Path                        | Contents                                          |
+| --------------------------- | ------------------------------------------------- |
+| `/app/`                     | App source code                                   |
+| `/data/workspace/`          | Bot personality & skill files (persistent volume) |
+| `/data/resources/`          | Credentials (GCP key, etc.)                       |
+| `/home/openclaw/.openclaw/` | OpenClaw state & config (`openclaw.json`)         |
 
 > **Heads up:** Files edited directly inside the container (outside `/data/`) are ephemeral — they are lost on container restart. For persistent changes, edit files in the repo and redeploy, or edit files inside `/data/`.
 
 ### 5. VS Code / Cursor — Edit files remotely
 
 **Required extensions:**
+
 - [Remote - SSH](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-ssh) — connect to the VM
 - [Dev Containers](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers) — attach to the Docker container
 
@@ -250,11 +252,13 @@ docker logs -f frontiersai-bot
 **Step 2 — Attach to the running container (optional):**
 
 _Option A — Command Palette (while connected to the VM via Remote-SSH):_
+
 1. `Cmd+Shift+P` → **Dev Containers: Attach to Running Container**
 2. Select `/frontiersai-bot`
 3. A new window opens inside the container filesystem
 
 _Option B — Docker extension panel (while connected to VM):_
+
 1. Open the Docker panel (whale icon in the sidebar)
 2. Right-click `frontiersai-bot` → **Attach Visual Studio Code**
 
@@ -271,9 +275,11 @@ Go to `/setup` and use the "Approve Pairing" dialog.
 
 **How do I change the AI model after setup?**
 Shell into the container and run:
+
 ```bash
 openclaw models set provider/model-id
 ```
+
 Example: `openclaw models set anthropic/claude-sonnet-4-20250514`. Use `openclaw models list --all` to see available models.
 
 **Config seems broken?**

@@ -27,7 +27,6 @@
       authChoices: [],
       selectedAuth: '',
       authSecret: '',
-      flow: 'quickstart',
       telegramToken: '',
       discordToken: '',
       slackBotToken: '',
@@ -40,6 +39,13 @@
       showPairingModal: false,
       isReady: false,
       tuiEnabled: false,
+      exporting: false,
+      showExportInfo: false,
+      showDevicesModal: false,
+      devicesLoading: false,
+      devices: [],
+      devicesPending: [],
+      devicesPaired: [],
 
       get currentGroup() {
         return this.authGroups.find(g => g.value === this.selectedGroup);
@@ -100,7 +106,6 @@
 
       async runSetup() {
         const payload = {
-          flow: this.flow,
           authChoice: this.selectedAuth,
           authSecret: this.authSecret,
           model: this.model,
@@ -218,6 +223,120 @@
         } finally {
           this.loading = false;
         }
+      },
+
+      async exportData() {
+        this.exporting = true;
+        this.log = 'Preparing export...\n';
+
+        try {
+          const res = await fetch('/setup/api/export', { credentials: 'same-origin' });
+          if (!res.ok) {
+            const text = await res.text();
+            let j;
+            try { j = JSON.parse(text); } catch (_e) { j = { error: text }; }
+            this.log += '✗ Export failed: ' + (j.error || j.output || text) + '\n';
+            return;
+          }
+
+          const disposition = res.headers.get('content-disposition') || '';
+          const match = disposition.match(/filename="?([^"]+)"?/);
+          const filename = match ? match[1] : 'openclaw-export.zip';
+
+          const blob = await res.blob();
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = filename;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          URL.revokeObjectURL(url);
+
+          this.log += '✓ Export downloaded: ' + filename + '\n';
+          this.showExportInfo = true;
+        } catch (e) {
+          this.log += '✗ Export error: ' + String(e) + '\n';
+        } finally {
+          this.exporting = false;
+        }
+      },
+
+      async openDevicesModal() {
+        this.showDevicesModal = true;
+        await this.loadDevices();
+      },
+
+      async loadDevices() {
+        this.devicesLoading = true;
+        try {
+          const j = await this.httpJson('/setup/api/devices');
+          const d = j.data;
+          if (d) {
+            if (Array.isArray(d)) {
+              this.devicesPending = d.filter(x => x.status === 'pending');
+              this.devicesPaired = d.filter(x => x.status !== 'pending');
+            } else {
+              this.devicesPending = d.pending || d.pendingRequests || d.requests || [];
+              this.devicesPaired = d.devices || d.paired || d.approved || [];
+            }
+          } else {
+            this.devicesPending = [];
+            this.devicesPaired = [];
+          }
+          if (j.raw) {
+            this.log += '[devices] ' + j.raw.trim() + '\n';
+          }
+        } catch (e) {
+          this.log += '✗ Failed to load devices: ' + String(e) + '\n';
+        } finally {
+          this.devicesLoading = false;
+        }
+      },
+
+      async approveDevice(requestId) {
+        this.devicesLoading = true;
+        try {
+          const body = requestId ? { requestId } : {};
+          const res = await fetch('/setup/api/devices/approve', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(body)
+          });
+          const j = await res.json();
+          if (j.ok) {
+            this.log += '✓ Device approved\n';
+          } else {
+            this.log += '✗ Approve failed: ' + (j.output || j.error || 'Unknown error') + '\n';
+          }
+          await this.loadDevices();
+        } catch (e) {
+          this.log += '✗ Error: ' + String(e) + '\n';
+          this.devicesLoading = false;
+        }
+      },
+
+      async rejectDevice(requestId) {
+        this.devicesLoading = true;
+        try {
+          const res = await fetch('/setup/api/devices/reject', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ requestId })
+          });
+          const j = await res.json();
+          if (j.ok) {
+            this.log += '✓ Device rejected\n';
+          } else {
+            this.log += '✗ Reject failed: ' + (j.output || j.error || 'Unknown error') + '\n';
+          }
+          await this.loadDevices();
+        } catch (e) {
+          this.log += '✗ Error: ' + String(e) + '\n';
+          this.devicesLoading = false;
+        }
       }
     }));
   });
@@ -255,12 +374,48 @@
       </div>
     </div>
 
-    <div x-show="isReady && configured" x-cloak>
+    <div x-show="isReady && configured" x-cloak class="space-y-6">
       <div class="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl p-6 shadow-sm dark:shadow-none">
         <h2 class="text-lg font-semibold mb-1">Setup Complete</h2>
-        <p class="text-neutral-500 text-sm mb-6">Your OpenClaw instance is configured and running</p>
+        <p class="text-neutral-500 text-sm">Your OpenClaw instance is configured and running</p>
+      </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+      <div class="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl p-6 shadow-sm dark:shadow-none">
+        <h3 class="text-base font-semibold mb-1">Devices</h3>
+        <p class="text-neutral-500 text-sm mb-4">Manage devices and channel access</p>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div class="flex flex-col bg-blue-50 dark:bg-blue-900/20 rounded-xl p-4 border border-blue-200 dark:border-blue-800">
+            <div class="flex items-center gap-3 mb-3">
+              <div class="w-10 h-10 bg-blue-500/20 rounded-lg flex items-center justify-center">
+                <svg class="w-5 h-5 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg>
+              </div>
+              <span class="font-medium text-blue-700 dark:text-blue-300">Approve Channel Access</span>
+            </div>
+            <p class="text-sm text-blue-600/80 dark:text-blue-400/70 flex-1">Grant DM access to users who have requested access on Telegram or Discord.</p>
+            <button @click="openPairingModal()" :disabled="loading" class="w-full mt-4 bg-blue-100 dark:bg-blue-900/40 hover:bg-blue-200 dark:hover:bg-blue-900/60 disabled:opacity-50 disabled:cursor-not-allowed text-blue-700 dark:text-blue-300 px-4 py-2.5 rounded-lg font-medium border border-blue-300 dark:border-blue-700 transition-colors">
+              Approve Channel Access
+            </button>
+          </div>
+
+          <div class="flex flex-col bg-violet-50 dark:bg-violet-900/20 rounded-xl p-4 border border-violet-200 dark:border-violet-800">
+            <div class="flex items-center gap-3 mb-3">
+              <div class="w-10 h-10 bg-violet-500/20 rounded-lg flex items-center justify-center">
+                <svg class="w-5 h-5 text-violet-600 dark:text-violet-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+              </div>
+              <span class="font-medium text-violet-700 dark:text-violet-300">Manage Devices</span>
+            </div>
+            <p class="text-sm text-violet-600/80 dark:text-violet-400/70 flex-1">Approve or reject browser/device pairing requests for the Control UI.</p>
+            <button @click="openDevicesModal()" :disabled="loading" class="w-full mt-4 bg-violet-100 dark:bg-violet-900/40 hover:bg-violet-200 dark:hover:bg-violet-900/60 disabled:opacity-50 disabled:cursor-not-allowed text-violet-700 dark:text-violet-300 px-4 py-2.5 rounded-lg font-medium border border-violet-300 dark:border-violet-700 transition-colors">
+              Manage Devices
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl p-6 shadow-sm dark:shadow-none">
+        <h3 class="text-base font-semibold mb-1">Maintenance</h3>
+        <p class="text-neutral-500 text-sm mb-4">Health checks and data export</p>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
           <div class="flex flex-col bg-amber-50 dark:bg-amber-900/20 rounded-xl p-4 border border-amber-200 dark:border-amber-800">
             <div class="flex items-center gap-3 mb-3">
               <div class="w-10 h-10 bg-amber-500/20 rounded-lg flex items-center justify-center">
@@ -268,7 +423,7 @@
               </div>
               <span class="font-medium text-amber-700 dark:text-amber-300">Run Doctor</span>
             </div>
-            <p class="text-sm text-amber-600/80 dark:text-amber-400/70 flex-1">Performs health checks and repairs broken configuration. Creates a backup before making changes.</p>
+            <p class="text-sm text-amber-600/80 dark:text-amber-400/70 flex-1">Performs health checks and repairs broken configuration.</p>
             <button @click="runDoctor()" :disabled="loading" class="w-full mt-4 bg-amber-100 dark:bg-amber-900/40 hover:bg-amber-200 dark:hover:bg-amber-900/60 disabled:opacity-50 disabled:cursor-not-allowed text-amber-700 dark:text-amber-300 px-4 py-2.5 rounded-lg font-medium border border-amber-300 dark:border-amber-700 transition-colors">
               <span x-show="!loading">Run Doctor</span>
               <span x-show="loading" class="flex items-center justify-center gap-2">
@@ -278,34 +433,39 @@
             </button>
           </div>
 
-          <div class="flex flex-col bg-blue-50 dark:bg-blue-900/20 rounded-xl p-4 border border-blue-200 dark:border-blue-800">
+          <div class="flex flex-col bg-emerald-50 dark:bg-emerald-900/20 rounded-xl p-4 border border-emerald-200 dark:border-emerald-800">
             <div class="flex items-center gap-3 mb-3">
-              <div class="w-10 h-10 bg-blue-500/20 rounded-lg flex items-center justify-center">
-                <svg class="w-5 h-5 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg>
+              <div class="w-10 h-10 bg-emerald-500/20 rounded-lg flex items-center justify-center">
+                <svg class="w-5 h-5 text-emerald-600 dark:text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
               </div>
-              <span class="font-medium text-blue-700 dark:text-blue-300">Approve Pairing</span>
+              <span class="font-medium text-emerald-700 dark:text-emerald-300">Export Data</span>
             </div>
-            <p class="text-sm text-blue-600/80 dark:text-blue-400/70 flex-1">Grant DM access to users who have requested pairing on Telegram or Discord.</p>
-            <button @click="openPairingModal()" :disabled="loading" class="w-full mt-4 bg-blue-100 dark:bg-blue-900/40 hover:bg-blue-200 dark:hover:bg-blue-900/60 disabled:opacity-50 disabled:cursor-not-allowed text-blue-700 dark:text-blue-300 px-4 py-2.5 rounded-lg font-medium border border-blue-300 dark:border-blue-700 transition-colors">
-              Approve Pairing
-            </button>
-          </div>
-
-          <div class="flex flex-col bg-red-50 dark:bg-red-900/20 rounded-xl p-4 border border-red-200 dark:border-red-800">
-            <div class="flex items-center gap-3 mb-3">
-              <div class="w-10 h-10 bg-red-500/20 rounded-lg flex items-center justify-center">
-                <svg class="w-5 h-5 text-red-600 dark:text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
-              </div>
-              <span class="font-medium text-red-700 dark:text-red-300">Reset Setup</span>
-            </div>
-            <p class="text-sm text-red-600/80 dark:text-red-400/70 flex-1">Deletes the config file so you can run onboarding again from scratch.</p>
-            <button @click="resetSetup()" :disabled="loading" class="w-full mt-4 bg-red-100 dark:bg-red-900/40 hover:bg-red-200 dark:hover:bg-red-900/60 disabled:opacity-50 disabled:cursor-not-allowed text-red-700 dark:text-red-300 px-4 py-2.5 rounded-lg font-medium border border-red-300 dark:border-red-700 transition-colors">
-              Reset Setup
+            <p class="text-sm text-emerald-600/80 dark:text-emerald-400/70 flex-1">Download a password-protected ZIP of your config and workspace data.</p>
+            <button @click="exportData()" :disabled="loading || exporting" class="w-full mt-4 bg-emerald-100 dark:bg-emerald-900/40 hover:bg-emerald-200 dark:hover:bg-emerald-900/60 disabled:opacity-50 disabled:cursor-not-allowed text-emerald-700 dark:text-emerald-300 px-4 py-2.5 rounded-lg font-medium border border-emerald-300 dark:border-emerald-700 transition-colors">
+              <span x-show="!exporting">Export Data</span>
+              <span x-show="exporting" class="flex items-center justify-center gap-2">
+                <svg class="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+                Exporting...
+              </span>
             </button>
           </div>
         </div>
 
         <div x-show="log" class="bg-neutral-100 dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800 rounded-lg p-4 font-mono text-xs text-neutral-600 dark:text-neutral-400 whitespace-pre-wrap max-h-64 overflow-y-auto" x-text="log"></div>
+      </div>
+
+      <div class="bg-white dark:bg-neutral-900 border border-red-200 dark:border-red-900/50 rounded-xl p-6 shadow-sm dark:shadow-none">
+        <h3 class="text-base font-semibold text-red-700 dark:text-red-400 mb-1">Danger Zone</h3>
+        <p class="text-neutral-500 text-sm mb-4">Destructive actions that cannot be undone</p>
+        <div class="flex items-center justify-between bg-red-50 dark:bg-red-900/20 rounded-xl p-4 border border-red-200 dark:border-red-800">
+          <div>
+            <p class="font-medium text-red-700 dark:text-red-300">Reset Setup</p>
+            <p class="text-sm text-red-600/80 dark:text-red-400/70 mt-1">Deletes the config file so you can run onboarding again from scratch.</p>
+          </div>
+          <button @click="resetSetup()" :disabled="loading" class="shrink-0 ml-4 bg-red-600 hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed text-white px-5 py-2.5 rounded-lg font-medium transition-colors">
+            Reset Setup
+          </button>
+        </div>
       </div>
     </div>
 
@@ -359,14 +519,6 @@
               <p class="text-xs text-neutral-500 dark:text-neutral-600 mt-2">Format: provider/model-name</p>
             </div>
 
-            <div>
-              <label class="block text-xs uppercase tracking-wide text-neutral-500 font-medium mb-2">Wizard Flow</label>
-              <select x-model="flow" class="w-full bg-neutral-50 dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-red-500 transition-colors">
-                <option value="quickstart">Quickstart</option>
-                <option value="advanced">Advanced</option>
-                <option value="manual">Manual</option>
-              </select>
-            </div>
           </div>
         </div>
       </div>
@@ -455,17 +607,14 @@
                 Running...
               </span>
             </button>
-            <button @click="openPairingModal()" :disabled="loading" class="bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 disabled:opacity-50 disabled:cursor-not-allowed text-neutral-700 dark:text-neutral-300 px-4 py-3 rounded-lg font-medium border border-neutral-300 dark:border-neutral-700 transition-colors">
-              Approve Pairing
-            </button>
-            <button @click="resetSetup()" :disabled="loading" class="text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 disabled:opacity-50 disabled:cursor-not-allowed px-4 py-3 rounded-lg font-medium transition-colors">
+<button @click="resetSetup()" :disabled="loading" class="text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 disabled:opacity-50 disabled:cursor-not-allowed px-4 py-3 rounded-lg font-medium transition-colors">
               Reset
             </button>
           </div>
 
           <div x-show="log" class="bg-neutral-100 dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800 rounded-lg p-4 font-mono text-xs text-neutral-600 dark:text-neutral-400 whitespace-pre-wrap max-h-64 overflow-y-auto" x-text="log"></div>
 
-          <p class="text-xs text-neutral-500 dark:text-neutral-600 mt-4">Reset deletes the config file so you can rerun onboarding. Pairing approval grants DM access when dmPolicy=pairing.</p>
+          <p class="text-xs text-neutral-500 dark:text-neutral-600 mt-4">Reset deletes the config file so you can rerun onboarding. Channel access approval grants DM access when dmPolicy=pairing.</p>
         </div>
       </div>
 
@@ -490,9 +639,96 @@
       </div>
     </div>
 
+    <div x-show="showDevicesModal" x-cloak class="fixed inset-0 bg-black/50 dark:bg-black/70 flex items-center justify-center z-50" @click.self="showDevicesModal = false">
+      <div class="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl p-6 w-full max-w-lg mx-4 shadow-xl dark:shadow-none max-h-[80vh] overflow-y-auto">
+        <div class="flex items-center justify-between mb-4">
+          <h3 class="text-lg font-semibold">Manage Devices</h3>
+          <div class="flex items-center gap-2">
+            <button @click="loadDevices()" :disabled="devicesLoading" class="text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300 p-2 rounded-lg hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors">
+              <svg class="w-4 h-4" :class="devicesLoading && 'animate-spin'" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+            </button>
+            <button @click="showDevicesModal = false" class="text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300 p-2 rounded-lg hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <p class="text-sm text-neutral-500 dark:text-neutral-400 mb-4">When a new browser connects to the Control UI, it requires a one-time pairing approval.</p>
+
+        <button @click="approveDevice()" :disabled="devicesLoading" class="w-full mb-4 bg-violet-600 hover:bg-violet-700 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2.5 rounded-lg font-medium transition-colors">
+          <span x-show="!devicesLoading">Approve Latest Request</span>
+          <span x-show="devicesLoading" class="flex items-center justify-center gap-2">
+            <svg class="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+            Loading...
+          </span>
+        </button>
+
+        <div class="space-y-4">
+          <div>
+            <h4 class="text-xs uppercase tracking-wide text-neutral-500 font-medium mb-2">Pending Requests</h4>
+            <div x-show="devicesPending.length === 0 && !devicesLoading" class="text-sm text-neutral-400 dark:text-neutral-600 bg-neutral-50 dark:bg-neutral-800/50 rounded-lg p-3 border border-neutral-200 dark:border-neutral-800">No pending requests</div>
+            <div class="space-y-2">
+              <template x-for="req in devicesPending" :key="req.requestId || req.id">
+                <div class="flex items-center justify-between bg-violet-50 dark:bg-violet-900/20 border border-violet-200 dark:border-violet-800 rounded-lg p-3">
+                  <div class="min-w-0 flex-1">
+                    <p class="text-sm font-medium text-violet-700 dark:text-violet-300 truncate" x-text="req.requestId || req.id"></p>
+                    <p x-show="req.createdAt" class="text-xs text-violet-500 dark:text-violet-400" x-text="req.createdAt ? new Date(req.createdAt).toLocaleString() : ''"></p>
+                  </div>
+                  <div class="flex gap-2 ml-3 shrink-0">
+                    <button @click="approveDevice(req.requestId || req.id)" :disabled="devicesLoading" class="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white px-3 py-1.5 rounded-lg text-xs font-medium transition-colors">Approve</button>
+                    <button @click="rejectDevice(req.requestId || req.id)" :disabled="devicesLoading" class="bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white px-3 py-1.5 rounded-lg text-xs font-medium transition-colors">Reject</button>
+                  </div>
+                </div>
+              </template>
+            </div>
+          </div>
+
+          <div>
+            <h4 class="text-xs uppercase tracking-wide text-neutral-500 font-medium mb-2">Paired Devices</h4>
+            <div x-show="devicesPaired.length === 0 && !devicesLoading" class="text-sm text-neutral-400 dark:text-neutral-600 bg-neutral-50 dark:bg-neutral-800/50 rounded-lg p-3 border border-neutral-200 dark:border-neutral-800">No paired devices</div>
+            <div class="space-y-2">
+              <template x-for="dev in devicesPaired" :key="dev.deviceId || dev.id">
+                <div class="flex items-center justify-between bg-neutral-50 dark:bg-neutral-800/50 border border-neutral-200 dark:border-neutral-800 rounded-lg p-3">
+                  <div class="min-w-0 flex-1">
+                    <p class="text-sm font-medium text-neutral-700 dark:text-neutral-300 truncate" x-text="dev.deviceId || dev.id"></p>
+                    <p class="text-xs text-neutral-500 dark:text-neutral-400">
+                      <span x-show="dev.role" x-text="dev.role" class="bg-neutral-200 dark:bg-neutral-700 px-1.5 py-0.5 rounded mr-1"></span>
+                      <span x-show="dev.createdAt" x-text="dev.createdAt ? new Date(dev.createdAt).toLocaleString() : ''"></span>
+                    </p>
+                  </div>
+                </div>
+              </template>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div x-show="showExportInfo" x-cloak class="fixed inset-0 bg-black/50 dark:bg-black/70 flex items-center justify-center z-50" @click.self="showExportInfo = false">
+      <div class="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl p-6 w-full max-w-md mx-4 shadow-xl dark:shadow-none">
+        <h3 class="text-lg font-semibold mb-4">Unzip Instructions</h3>
+        <p class="text-sm text-neutral-600 dark:text-neutral-400 mb-4">The exported ZIP is password-protected with your <strong>SETUP_PASSWORD</strong>.</p>
+        <div class="space-y-4">
+          <div>
+            <p class="text-xs uppercase tracking-wide text-neutral-500 font-medium mb-2">macOS / Linux</p>
+            <code class="block bg-neutral-100 dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800 rounded-lg px-4 py-3 text-sm text-neutral-700 dark:text-neutral-300 font-mono">unzip -P YOUR_PASSWORD openclaw-export-*.zip</code>
+          </div>
+          <div>
+            <p class="text-xs uppercase tracking-wide text-neutral-500 font-medium mb-2">Windows (PowerShell)</p>
+            <p class="text-sm text-neutral-600 dark:text-neutral-400">Use <a href="https://www.7-zip.org/" target="_blank" class="text-teal-600 dark:text-teal-400 underline">7-Zip</a> to extract — right-click the file, select "Extract Here", and enter your password when prompted.</p>
+          </div>
+          <div>
+            <p class="text-xs uppercase tracking-wide text-neutral-500 font-medium mb-2">Using 7z CLI</p>
+            <code class="block bg-neutral-100 dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800 rounded-lg px-4 py-3 text-sm text-neutral-700 dark:text-neutral-300 font-mono">7z x -pYOUR_PASSWORD openclaw-export-*.zip</code>
+          </div>
+        </div>
+        <button @click="showExportInfo = false" class="w-full mt-6 bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-300 px-4 py-3 rounded-lg font-medium border border-neutral-300 dark:border-neutral-700 transition-colors">Close</button>
+      </div>
+    </div>
+
     <div x-show="showPairingModal" x-cloak class="fixed inset-0 bg-black/50 dark:bg-black/70 flex items-center justify-center z-50" @click.self="showPairingModal = false">
       <div class="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl p-6 w-full max-w-sm mx-4 shadow-xl dark:shadow-none">
-        <h3 class="text-lg font-semibold mb-4">Approve Pairing</h3>
+        <h3 class="text-lg font-semibold mb-4">Approve Channel Access</h3>
         <div class="space-y-4">
           <div>
             <label class="block text-xs uppercase tracking-wide text-neutral-500 font-medium mb-2">Channel</label>

@@ -358,31 +358,25 @@ app.get("/setup/api/status", requireSetupAuth, async (_req, res) => {
     {
       value: "openai",
       label: "OpenAI",
-      hint: "Codex OAuth + API key",
+      hint: "API key",
       options: [
-        { value: "codex-cli", label: "OpenAI Codex OAuth (Codex CLI)" },
-        { value: "openai-codex", label: "OpenAI Codex (ChatGPT OAuth)" },
         { value: "openai-api-key", label: "OpenAI API key" },
       ],
     },
     {
       value: "anthropic",
       label: "Anthropic",
-      hint: "Claude Code CLI + API key",
+      hint: "API key",
       options: [
-        { value: "claude-cli", label: "Anthropic token (Claude Code CLI)" },
-        { value: "token", label: "Anthropic token (paste setup-token)" },
         { value: "apiKey", label: "Anthropic API key" },
       ],
     },
     {
       value: "google",
       label: "Google",
-      hint: "Gemini API key + OAuth",
+      hint: "API key",
       options: [
         { value: "gemini-api-key", label: "Google Gemini API key" },
-        { value: "google-antigravity", label: "Google Antigravity OAuth" },
-        { value: "google-gemini-cli", label: "Google Gemini CLI OAuth" },
       ],
     },
     {
@@ -486,7 +480,7 @@ function buildOnboardArgs(payload) {
     "--gateway-token",
     OPENCLAW_GATEWAY_TOKEN,
     "--flow",
-    payload.flow || "quickstart",
+    "quickstart",
   ];
 
   if (payload.authChoice) {
@@ -512,9 +506,6 @@ function buildOnboardArgs(payload) {
       args.push(flag, secret);
     }
 
-    if (payload.authChoice === "token" && secret) {
-      args.push("--token-provider", "anthropic", "--token", secret);
-    }
   }
 
   return args;
@@ -544,17 +535,10 @@ function runCmd(cmd, args, opts = {}) {
   });
 }
 
-const VALID_FLOWS = ["quickstart", "advanced", "manual"];
 const VALID_AUTH_CHOICES = [
-  "codex-cli",
-  "openai-codex",
   "openai-api-key",
-  "claude-cli",
-  "token",
   "apiKey",
   "gemini-api-key",
-  "google-antigravity",
-  "google-gemini-cli",
   "openrouter-api-key",
   "ai-gateway-api-key",
   "moonshot-api-key",
@@ -570,10 +554,7 @@ const VALID_AUTH_CHOICES = [
 ];
 
 function validatePayload(payload) {
-  if (payload.flow && !VALID_FLOWS.includes(payload.flow)) {
-    return `Invalid flow: ${payload.flow}. Must be one of: ${VALID_FLOWS.join(", ")}`;
-  }
-  if (payload.authChoice && !VALID_AUTH_CHOICES.includes(payload.authChoice)) {
+if (payload.authChoice && !VALID_AUTH_CHOICES.includes(payload.authChoice)) {
     return `Invalid authChoice: ${payload.authChoice}`;
   }
   const stringFields = [
@@ -819,6 +800,94 @@ app.post("/setup/api/doctor", requireSetupAuth, async (_req, res) => {
   });
 });
 
+app.get("/setup/api/devices", requireSetupAuth, async (_req, res) => {
+  const args = ["devices", "list", "--json", "--token", OPENCLAW_GATEWAY_TOKEN];
+  const result = await runCmd(OPENCLAW_NODE, clawArgs(args));
+  try {
+    const data = JSON.parse(result.output);
+    return res.json({ ok: true, data, raw: result.output });
+  } catch {
+    return res.json({ ok: result.code === 0, raw: result.output });
+  }
+});
+
+app.post("/setup/api/devices/approve", requireSetupAuth, async (req, res) => {
+  const { requestId } = req.body || {};
+  const args = ["devices", "approve"];
+  if (requestId) {
+    args.push(String(requestId));
+  } else {
+    args.push("--latest");
+  }
+  args.push("--token", OPENCLAW_GATEWAY_TOKEN);
+  const result = await runCmd(OPENCLAW_NODE, clawArgs(args));
+  return res
+    .status(result.code === 0 ? 200 : 500)
+    .json({ ok: result.code === 0, output: result.output });
+});
+
+app.post("/setup/api/devices/reject", requireSetupAuth, async (req, res) => {
+  const { requestId } = req.body || {};
+  if (!requestId) {
+    return res.status(400).json({ ok: false, error: "Missing requestId" });
+  }
+  const args = [
+    "devices", "reject", String(requestId),
+    "--token", OPENCLAW_GATEWAY_TOKEN,
+  ];
+  const result = await runCmd(OPENCLAW_NODE, clawArgs(args));
+  return res
+    .status(result.code === 0 ? 200 : 500)
+    .json({ ok: result.code === 0, output: result.output });
+});
+
+app.get("/setup/api/export", requireSetupAuth, async (_req, res) => {
+  const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+  const zipName = `openclaw-export-${timestamp}.zip`;
+  const tmpZip = path.join(os.tmpdir(), zipName);
+
+  try {
+    const dirsToExport = [];
+    if (fs.existsSync(STATE_DIR)) dirsToExport.push(STATE_DIR);
+    if (fs.existsSync(WORKSPACE_DIR)) dirsToExport.push(WORKSPACE_DIR);
+
+    if (dirsToExport.length === 0) {
+      return res.status(404).json({ ok: false, error: "No data directories found to export." });
+    }
+
+    const zipArgs = ["-r", "-P", SETUP_PASSWORD, tmpZip, ...dirsToExport];
+    const result = await runCmd("zip", zipArgs);
+
+    if (result.code !== 0 || !fs.existsSync(tmpZip)) {
+      return res.status(500).json({ ok: false, error: "Failed to create export archive.", output: result.output });
+    }
+
+    const stat = fs.statSync(tmpZip);
+    res.set({
+      "Content-Type": "application/zip",
+      "Content-Disposition": `attachment; filename="${zipName}"`,
+      "Content-Length": String(stat.size),
+    });
+
+    const stream = fs.createReadStream(tmpZip);
+    stream.pipe(res);
+    stream.on("end", () => {
+      try { fs.rmSync(tmpZip, { force: true }); } catch {}
+    });
+    stream.on("error", (err) => {
+      console.error("[export] stream error:", err);
+      try { fs.rmSync(tmpZip, { force: true }); } catch {}
+      if (!res.headersSent) {
+        res.status(500).json({ ok: false, error: "Stream error during export." });
+      }
+    });
+  } catch (err) {
+    try { fs.rmSync(tmpZip, { force: true }); } catch {}
+    console.error("[export] error:", err);
+    return res.status(500).json({ ok: false, error: `Export failed: ${err.message}` });
+  }
+});
+
 app.get("/tui", requireSetupAuth, (_req, res) => {
   if (!ENABLE_WEB_TUI) {
     return res
@@ -965,6 +1034,7 @@ const proxy = httpProxy.createProxyServer({
   target: GATEWAY_TARGET,
   ws: true,
   xfwd: true,
+  changeOrigin: true,
   proxyTimeout: 120_000,
   timeout: 120_000,
 });
@@ -987,10 +1057,12 @@ proxy.on("error", (err, _req, res) => {
 
 proxy.on("proxyReq", (proxyReq, req, res) => {
   proxyReq.setHeader("Authorization", `Bearer ${OPENCLAW_GATEWAY_TOKEN}`);
+  proxyReq.setHeader("Origin", GATEWAY_TARGET);
 });
 
 proxy.on("proxyReqWs", (proxyReq, req, socket, options, head) => {
   proxyReq.setHeader("Authorization", `Bearer ${OPENCLAW_GATEWAY_TOKEN}`);
+  proxyReq.setHeader("Origin", GATEWAY_TARGET);
 });
 
 app.use(async (req, res) => {
