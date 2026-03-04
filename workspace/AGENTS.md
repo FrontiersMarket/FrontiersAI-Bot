@@ -123,6 +123,23 @@ More: <https://example.com/report|Full Report>
 
 - `*bold*` or CAPS for emphasis. No headers or tables. Keep short.
 
+### iMessage
+
+- **Plain text only.** No markdown — asterisks, underscores, backticks, and `#` headers all render as literal characters.
+- Use ALL CAPS or punctuation for emphasis sparingly.
+- No bullet lists with `-` or `*` — use line breaks or commas to separate items.
+- No links with `[label](url)` — paste the raw URL instead.
+- Keep responses short and conversational.
+
+Example well-formatted iMessage response:
+```
+Market Summary:
+Live Cattle — Futures up 0.45 to 198.25
+Feeder Cattle — Down 0.30 at 264.50
+
+Full report: https://example.com/report
+```
+
 ## Heartbeats
 
 Follow `HEARTBEAT.md`. If nothing needs attention, reply `HEARTBEAT_OK`.
