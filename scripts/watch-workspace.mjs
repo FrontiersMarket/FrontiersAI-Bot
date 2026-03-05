@@ -35,11 +35,11 @@ const MANIFEST_HANDLERS = {
   },
   "requirements.txt": {
     type: "python",
-    command: (skillDir) => ["pip3", "install", "-r", join(skillDir, "requirements.txt")],
+    command: (skillDir) => ["pip3", "install", "--break-system-packages", "-r", join(skillDir, "requirements.txt")],
   },
   "pyproject.toml": {
     type: "python",
-    command: (skillDir) => ["pip3", "install", skillDir],
+    command: (skillDir) => ["pip3", "install", "--break-system-packages", skillDir],
   },
 };
 
