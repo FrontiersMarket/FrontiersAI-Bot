@@ -722,6 +722,35 @@ app.post("/setup/api/run", requireSetupAuth, async (req, res) => {
   }
 });
 
+app.post("/setup/api/set-allowed-origins", requireSetupAuth, async (req, res) => {
+  try {
+    const { origin } = req.body || {};
+    if (!origin || typeof origin !== "string") {
+      return res
+        .status(400)
+        .json({ ok: false, output: "Missing or invalid origin\n" });
+    }
+    const result = await runCmd(
+      OPENCLAW_NODE,
+      clawArgs([
+        "config",
+        "set",
+        "--json",
+        "gateway.controlUi.allowedOrigins",
+        JSON.stringify([origin]),
+      ]),
+    );
+    return res.json({
+      ok: result.code === 0,
+      output: `[config] gateway.controlUi.allowedOrigins=${JSON.stringify([origin])} exit=${result.code}\n${result.output || ""}`,
+    });
+  } catch (err) {
+    return res
+      .status(500)
+      .json({ ok: false, output: `Internal error: ${String(err)}\n` });
+  }
+});
+
 app.get("/setup/api/debug", requireSetupAuth, async (_req, res) => {
   const v = await runCmd(OPENCLAW_NODE, clawArgs(["--version"]));
   const help = await runCmd(

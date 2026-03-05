@@ -129,6 +129,33 @@
           let j;
           try { j = JSON.parse(text); } catch (_e) { j = { ok: false, output: text }; }
           this.log += (j.output || JSON.stringify(j, null, 2));
+
+          if (j.ok) {
+            // Set allowedOrigins so the Control UI can be opened from this browser
+            this.log += '\n[setup] Setting Control UI allowed origins...\n';
+            try {
+              const origin = window.location.origin;
+              const origRes = await fetch('/setup/api/set-allowed-origins', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ origin })
+              });
+              const origText = await origRes.text();
+              let origJ;
+              try { origJ = JSON.parse(origText); } catch (_e) { origJ = { ok: false, output: origText }; }
+              this.log += origJ.output || (origJ.ok ? '✓ Allowed origins set.\n' : '✗ Failed to set allowed origins.\n');
+            } catch (e) {
+              this.log += '✗ Error setting allowed origins: ' + String(e) + '\n';
+            }
+
+            this.log += '\n✓ Setup complete! Open the Control UI at: ' + window.location.origin + '/openclaw\n';
+            this.log += 'Then come back here to approve any pending device pairing requests.\n';
+
+            // Auto-open devices modal so user can approve pending requests
+            await this.openDevicesModal();
+          }
+
           await this.refreshStatus();
         } catch (e) {
           this.log += '\nError: ' + String(e) + '\n';

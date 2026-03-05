@@ -99,7 +99,45 @@ export async function runPairingFlow(vars) {
 
   guardCancel(
     await confirm({
-      message: 'Wizard complete and showing "Open OpenClaw UI"?',
+      message: "Setup wizard finished? (/setup process complete)",
+      initialValue: false,
+    })
+  );
+
+  // ── Patch allowedOrigins + tools.allow ────────────────────────────────────
+  // Do this immediately after setup so the Control UI URL is whitelisted
+  // before the user tries to open it.
+  {
+    const s = spinner();
+    s.start("Patching openclaw.json (allowedOrigins + tools.allow)…");
+    let patched = false;
+    try {
+      patched = patchOpenclaw(port);
+      s.stop(
+        patched
+          ? `Patched openclaw.json (allowedOrigins, tools.allow, agents.defaults) ✓`
+          : "openclaw.json already up to date — no change needed ✓"
+      );
+    } catch (err) {
+      s.stop("Could not patch openclaw.json");
+      log.warn(`  ${err.message}`);
+    }
+  }
+
+  // ── Step 2: open the Control UI → triggers pairing request ────────────────
+  note(
+    [
+      `  Open the Control UI now:  ${controlUrl}`,
+      "",
+      '  You will likely see a "pairing required" screen — that is expected.',
+      "  Come back here and confirm; we will approve the pairing next.",
+    ].join("\n"),
+    "Step 2 — Open Control UI"
+  );
+
+  guardCancel(
+    await confirm({
+      message: 'Have you opened the Control UI (even if it shows "pairing required")?',
       initialValue: false,
     })
   );
@@ -191,43 +229,6 @@ export async function runPairingFlow(vars) {
       log.warn(`  ${err.message}`);
     }
   }
-
-  // ── Patch allowedOrigins + tools.allow ────────────────────────────────────
-  {
-    const s = spinner();
-    s.start("Patching openclaw.json (allowedOrigins + tools.allow)…");
-    let patched = false;
-    try {
-      patched = patchOpenclaw(port);
-      s.stop(
-        patched
-          ? `Patched openclaw.json (allowedOrigins, tools.allow, agents.defaults) ✓`
-          : "openclaw.json already up to date — no change needed ✓"
-      );
-    } catch (err) {
-      s.stop("Could not patch openclaw.json");
-      log.warn(`  ${err.message}`);
-    }
-  }
-
-  // ── Step 2: open the Control UI → triggers pairing request ────────────────
-  note(
-    [
-      '  Click the "Open OpenClaw UI" button in the wizard',
-      `  (or navigate directly to ${controlUrl}).`,
-      "",
-      '  You will likely see a "pairing required" screen — that is expected.',
-      "  Come back here and confirm; we will approve the pairing next.",
-    ].join("\n"),
-    "Step 2 — Open Control UI"
-  );
-
-  guardCancel(
-    await confirm({
-      message: 'Have you opened the Control UI (even if it shows "pairing required")?',
-      initialValue: false,
-    })
-  );
 
   // ── Step 3: auto-approve pending pairing requests ─────────────────────────
   const s = spinner();
