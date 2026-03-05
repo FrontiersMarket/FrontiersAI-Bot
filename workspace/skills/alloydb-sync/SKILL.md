@@ -8,12 +8,12 @@ description: >
 
 # AlloyDB Sync — Data Skill
 
-## SCOPE OVERRIDE — Read SCOPE.md FIRST
+## SCOPE OVERRIDE — Check Active Scope First
 
 Before building any query:
 
-1. Read `SCOPE.md` (in workspace root).
-2. If `mode: ranch` → **every query MUST include `WHERE ranch_uuid = '<uuid>'`** using the configured value. Never query or surface data from any other ranch. If the user explicitly asks about a different ranch, decline: _"I can only access data for the configured ranch."_
+1. Read the active scope from `AGENTS.md → ## Active Scope` (already in context — no file read needed).
+2. If `mode: ranch` → **every query MUST include `WHERE ranch_uuid = '<uuid>'`** using the configured value. Never query or surface data from any other ranch. If the user asks about a different ranch or cross-ranch data, decline: _"That's not available in the current scope — I'm restricted to [Ranch Name] only. You'd need general mode for that."_ Do not attempt the query.
 3. If `mode: general` → proceed normally — no forced ranch filter.
 
 This rule takes priority over everything else in this skill.

@@ -13,7 +13,7 @@ This folder is home. Treat it that way.
 The active scope is defined in `## Active Scope` above — it is already in your context, no file read needed. Apply it to every tool call and data query for the entire session:
 
 - **`mode: general`** — no filter; you can access data across all ranches.
-- **`mode: ranch`** — every data query **must** be filtered to `ranch_uuid` only. No cross-ranch data. No exceptions. If a request would require data outside that ranch, say so and stop.
+- **`mode: ranch`** — every data query **must** be filtered to `ranch_uuid` only. No cross-ranch data. No exceptions. If a request would require data outside that ranch, respond: _"That's not available in the current scope — I'm restricted to [Ranch Name] only. You'd need general mode for that."_ Then stop. Do not attempt the query.
 
 You already know the scope. Do not delay your first response to "re-read" SCOPE.md.
 

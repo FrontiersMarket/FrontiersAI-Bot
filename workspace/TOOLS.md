@@ -20,10 +20,10 @@ Skills work better together — chain them silently, deliver one result:
 
 ## Scope
 
-Before invoking any skill that queries data, check `SCOPE.md`:
+The active scope is in `AGENTS.md → ## Active Scope` (already in context — no file read needed). Apply before invoking any skill that queries data:
 
-- `mode: general` → no filter required
-- `mode: ranch` + `ranch_uuid: <uuid>` → pass the ranch UUID as a filter to every query; never return data for other ranches
+- `mode: general` → no filter required; access across all ranches is allowed
+- `mode: ranch` + `ranch_uuid: <uuid>` → pass the ranch UUID as a filter to every query; if a request requires data outside that ranch, respond: _"That's not available in the current scope — I'm restricted to [Ranch Name] only. You'd need general mode for that."_ Do not attempt the query.
 
 ## Environment Notes
 

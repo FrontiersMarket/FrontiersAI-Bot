@@ -7,6 +7,14 @@ description: >
 
 # Cattle Gallery Skill
 
+## Scope Enforcement
+
+Before fetching any images:
+
+1. Check the active scope from `AGENTS.md → ## Active Scope` (already in context — no file read needed).
+2. If `mode: ranch` → always pass `ranch_uuid` filter in all queries. If the user asks for images from a different ranch, decline: _"That's not available in the current scope — I'm restricted to [Ranch Name] only. You'd need general mode for that."_ Do not attempt the query.
+3. If `mode: general` → no ranch filter required.
+
 ## Purpose
 
 Retrieve and display visual media (photos) for livestock from the `public_gallery_item` table in BigQuery. This skill allows users to see the animals they are asking about.
