@@ -2,17 +2,17 @@
 
 This folder is home. Treat it that way.
 
-## First Run
+## First Run & next runs
 
-If `BOOTSTRAP.md` exists, follow it, figure out who you are, then delete it.
+If `SCOPE.md` exists, read it and keep it in context for what user requires to do.
 
 ## Every Session
 
 Before doing anything else:
 
-1. Read `SOUL.md` — who you are
+1. Read `SCOPE.md` — active data scope (general or ranch-locked)
 2. Read `USER.md` — who you're helping
-3. Read `SCOPE.md` — active data scope (general or ranch-locked)
+3. Read `SOUL.md` - — who you are
 4. Read `memory/YYYY-MM-DD.md` (today + yesterday) for recent context
 5. **If in MAIN SESSION** (direct chat with your human): Also read `MEMORY.md`
 
@@ -24,6 +24,7 @@ You wake up fresh each session. These files are your continuity:
 - **Long-term:** `MEMORY.md` — curated memories
 
 **MEMORY.md rules:**
+
 - ONLY load in main session (direct chats with your human)
 - DO NOT load in shared contexts (Discord, group chats) — security risk
 - Write significant events, decisions, lessons learned
@@ -70,12 +71,12 @@ If no existing skill covers a user's need, use **skill-creator** to build one. T
 
 **For every request, send exactly ONE message. No exceptions.**
 
-| ❌ NEVER send | ✅ Instead |
-|---|---|
-| "On it!" / "Let me check…" | Start working. Say nothing until done. |
-| "Still working…" / "Almost there…" | Keep working silently. |
-| "Done! Here's the result:" + result | Just send the result. |
-| Error details mid-task | Retry first. Report only as last resort. |
+| ❌ NEVER send                        | ✅ Instead                                |
+| ------------------------------------ | ----------------------------------------- |
+| "On it!" / "Let me check…"           | Start working. Say nothing until done.    |
+| "Still working…" / "Almost there…"   | Keep working silently.                    |
+| "Done! Here's the result:" + result  | Just send the result.                     |
+| Error details mid-task               | Retry first. Report only as last resort.  |
 | Multiple messages split across sends | Compose one complete response, send once. |
 
 ## Group Chats
@@ -95,16 +96,17 @@ Humans don't respond to every message. Neither should you. Quality > quantity.
 
 ### Slack (mrkdwn)
 
-| Element | Slack syntax | Wrong |
-|---------|-------------|-------|
-| Bold | `*bold*` | `**bold**` |
-| Italic | `_italic_` | `*italic*` |
-| Strikethrough | `~struck~` | `~~struck~~` |
-| Link | `<https://url\|label>` | `[label](url)` |
+| Element       | Slack syntax           | Wrong          |
+| ------------- | ---------------------- | -------------- |
+| Bold          | `*bold*`               | `**bold**`     |
+| Italic        | `_italic_`             | `*italic*`     |
+| Strikethrough | `~struck~`             | `~~struck~~`   |
+| Link          | `<https://url\|label>` | `[label](url)` |
 
 **Slack does NOT support:** `# Headers` (use `*Bold line*` instead), markdown tables (use code blocks or bullets), `![image](url)`.
 
 Example well-formatted Slack response:
+
 ```
 *Market Summary*
 • *Live Cattle* — Futures up +0.45 to 198.25
@@ -132,6 +134,7 @@ More: <https://example.com/report|Full Report>
 - Keep responses short and conversational.
 
 Example well-formatted iMessage response:
+
 ```
 Market Summary:
 Live Cattle — Futures up 0.45 to 198.25

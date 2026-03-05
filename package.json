@@ -4,7 +4,7 @@
   "type": "module",
   "packageManager": "pnpm@10.16.1",
   "engines": {
-    "node": ">=24"
+    "node": ">=22"
   },
   "scripts": {
     "watch": "turbo run docker:logs dev:watch",
@@ -18,7 +18,8 @@
     "docker:build": "docker build -t frontiersai-bot .",
     "start": "node src/server.js",
     "lint": "node -c src/server.js",
-    "clean-messages": "node scripts/clean-bot-messages.mjs"
+    "clean-messages": "node scripts/clean-bot-messages.mjs",
+    "setup:local": "node scripts/setup/index.mjs"
   },
   "dependencies": {
     "express": "^5.1.0",
