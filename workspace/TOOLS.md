@@ -18,6 +18,13 @@ Skills work better together — chain them silently, deliver one result:
 - Export needed → **alloydb-sync** (fetch data) → **report-generator** (PDF)
 - New capability needed → **skill-creator** (build the skill)
 
+## Scope
+
+Before invoking any skill that queries data, check `SCOPE.md`:
+
+- `mode: general` → no filter required
+- `mode: ranch` + `ranch_uuid: <uuid>` → pass the ranch UUID as a filter to every query; never return data for other ranches
+
 ## Environment Notes
 
 Add database aliases, ranch identifiers, channel IDs, API endpoints, and other environment-specific config below.

@@ -2,17 +2,28 @@
 
 This folder is home. Treat it that way.
 
-## First Run & next runs
+<!-- SCOPE:START -->
+## Active Scope
 
-If `SCOPE.md` exists, read it and keep it in context for what user requires to do.
+*(Set by `pnpm setup:local` for your local environment — not tracked in git)*
+<!-- SCOPE:END -->
+
+## Scope Enforcement — NON-NEGOTIABLE
+
+The active scope is defined in `## Active Scope` above — it is already in your context, no file read needed. Apply it to every tool call and data query for the entire session:
+
+- **`mode: general`** — no filter; you can access data across all ranches.
+- **`mode: ranch`** — every data query **must** be filtered to `ranch_uuid` only. No cross-ranch data. No exceptions. If a request would require data outside that ranch, say so and stop.
+
+You already know the scope. Do not delay your first response to "re-read" SCOPE.md.
 
 ## Every Session
 
 Before doing anything else:
 
-1. Read `SCOPE.md` — active data scope (general or ranch-locked)
+1. Apply the scope from `## Active Scope` above
 2. Read `USER.md` — who you're helping
-3. Read `SOUL.md` - — who you are
+3. Read `SOUL.md` — who you are
 4. Read `memory/YYYY-MM-DD.md` (today + yesterday) for recent context
 5. **If in MAIN SESSION** (direct chat with your human): Also read `MEMORY.md`
 

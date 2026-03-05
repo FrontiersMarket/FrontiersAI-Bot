@@ -1,9 +1,10 @@
 import { confirm, note, log, spinner } from "@clack/prompts";
 import { existsSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { resolve } from "node:path";
-import { listPendingDevices, approveDevice } from "../lib/docker.mjs";
-import { guardCancel, sleep, execFileAsync } from "../lib/utils.mjs";
+import { listPendingDevices, approveDevice, execOpenclaw } from "../lib/docker.mjs";
+import { guardCancel, sleep, execFileAsync, pollHealth } from "../lib/utils.mjs";
 import { CONTAINER_NAME, ROOT, RESOURCES_SRC, GCP_KEY_FILE } from "../lib/constants.mjs";
+import { reInjectScope } from "./scope.mjs";
 
 const POLL_INTERVAL_MS = 3000;
 const POLL_MAX_ATTEMPTS = 10; // 30s total
@@ -122,6 +123,14 @@ export async function runPairingFlow(vars) {
       log.warn(`  ${err.message}`);
     }
   }
+
+  // ── Re-inject scope into dest AGENTS.md after sync ────────────────────────
+  // sync-workspace.sh copies the clean source AGENTS.md (no scope values) to
+  // .tmpdata/workspace/AGENTS.md, overwriting the scope injection from the
+  // scope step. Re-inject here so the container sees the correct scope.
+  try {
+    reInjectScope();
+  } catch {}
 
   // ── Remove BOOTSTRAP.md from container's live filesystem ──────────────────
   // The sync script cleans .tmpdata but the container may still have a stale
@@ -284,7 +293,7 @@ export async function runPairingFlow(vars) {
     );
   }
 
-  // ── Clear agent sessions + restart container ───────────────────────────────
+  // ── Clear agent sessions + reset via CLI ──────────────────────────────────
   {
     const s = spinner();
     s.start("Clearing agent sessions…");
@@ -292,13 +301,22 @@ export async function runPairingFlow(vars) {
     try {
       if (existsSync(sessionsDir)) {
         rmSync(sessionsDir, { recursive: true, force: true });
-        s.stop("Agent sessions cleared ✓");
-      } else {
-        s.stop("No agent sessions found — nothing to clear ✓");
       }
+      s.stop("Agent sessions cleared ✓");
     } catch (err) {
       s.stop("Could not clear agent sessions");
       log.warn(`  ${err.message}`);
+    }
+  }
+
+  {
+    const s = spinner();
+    s.start("Resetting OpenClaw session…");
+    try {
+      await execOpenclaw(["session", "reset"], 15_000);
+      s.stop("OpenClaw session reset ✓");
+    } catch {
+      s.stop("Session reset skipped (command not available or no active session)");
     }
   }
 
@@ -315,11 +333,28 @@ export async function runPairingFlow(vars) {
     }
   }
 
-  // ── Step 5: watcher tip ────────────────────────────────────────────────────
+  // ── Wait for gateway + open fresh session ──────────────────────────────────
+  {
+    const healthUrl = `http://localhost:${port}/setup/healthz`;
+    const s = spinner();
+    s.start("Waiting for gateway to come back up…");
+    const healthy = await pollHealth(healthUrl, 60_000);
+    if (healthy) {
+      s.stop("Gateway is ready ✓");
+    } else {
+      s.stop("Gateway health check timed out — it may still be starting up");
+      log.warn(`  Monitor with: docker logs -f ${CONTAINER_NAME}`);
+    }
+  }
+
+  // ── Step 5: fresh session + watcher tip ───────────────────────────────────
   note(
     [
-      "  Keep the bot in sync with your local workspace changes and",
-      "  tail the gateway logs by running:",
+      "  A fresh session is ready. Open the Control UI to start:",
+      "",
+      `    ${controlUrl}`,
+      "",
+      "  To keep the bot in sync and tail logs while you work:",
       "",
       "    pnpm watch",
       "",
@@ -327,6 +362,6 @@ export async function runPairingFlow(vars) {
       "    • Stream container logs in real time",
       "    • Auto-sync workspace/ changes → container on every save",
     ].join("\n"),
-    "Tip — Run the watcher"
+    "All done — fresh session ready"
   );
 }
