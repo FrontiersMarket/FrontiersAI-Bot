@@ -36,9 +36,10 @@ function patchOpenclaw(port) {
   config.gateway ??= {};
   config.gateway.controlUi ??= {};
   const origins = config.gateway.controlUi.allowedOrigins ?? [];
-  const origin = `http://localhost:${port}`;
-  if (!origins.includes(origin)) {
-    config.gateway.controlUi.allowedOrigins = [...origins, origin];
+  const required = [`http://localhost:${port}`, "http://127.0.0.1:18789"];
+  const missing = required.filter((o) => !origins.includes(o));
+  if (missing.length > 0) {
+    config.gateway.controlUi.allowedOrigins = [...origins, ...missing];
     changed = true;
   }
 
