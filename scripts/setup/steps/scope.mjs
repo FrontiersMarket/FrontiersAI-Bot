@@ -1,5 +1,5 @@
-import { confirm, text, select, note, log, spinner } from "@clack/prompts";
-import { existsSync, readFileSync, writeFileSync, mkdirSync, copyFileSync } from "node:fs";
+import { text, select, log, spinner } from "@clack/prompts";
+import { writeFileSync, mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { WORKSPACE_SRC, WORKSPACE_DEST, SCOPE_FILE } from "../lib/constants.mjs";
 import { guardCancel } from "../lib/utils.mjs";
@@ -8,17 +8,6 @@ const SCOPE_PATH = resolve(WORKSPACE_SRC, SCOPE_FILE);
 const SCOPE_DEST = resolve(WORKSPACE_DEST, SCOPE_FILE);
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-function parseCurrentScope() {
-  if (!existsSync(SCOPE_PATH)) return null;
-  const content = readFileSync(SCOPE_PATH, "utf8");
-  const modeMatch = content.match(/^mode:\s*(\S+)/m);
-  const uuidMatch = content.match(/^ranch_uuid:\s*(\S+)/m);
-  return {
-    mode: modeMatch?.[1] ?? "general",
-    ranch_uuid: uuidMatch?.[1] ?? null,
-  };
-}
 
 function buildScopeContent(mode, ranchUuid = null) {
   if (mode === "ranch") {
@@ -49,40 +38,7 @@ function buildScopeContent(mode, ranchUuid = null) {
   ].join("\n");
 }
 
-function syncToDest(content) {
-  mkdirSync(WORKSPACE_DEST, { recursive: true });
-  writeFileSync(SCOPE_DEST, content, "utf8");
-}
-
 export async function configureBotScope() {
-  const current = parseCurrentScope();
-
-  // Show current state
-  if (current) {
-    note(
-      current.mode === "ranch"
-        ? [
-            `  Current mode:  ranch`,
-            `  Ranch UUID:    ${current.ranch_uuid}`,
-          ].join("\n")
-        : `  Current mode:  general  (no ranch filter)`,
-      "Bot scope  (workspace/SCOPE.md)"
-    );
-
-    const change = guardCancel(
-      await confirm({ message: "Change the current scope?", initialValue: false })
-    );
-    if (!change) {
-      // Still sync to .tmpdata in case it's out of date
-      const s = spinner();
-      s.start("Syncing SCOPE.md to container volume…");
-      syncToDest(readFileSync(SCOPE_PATH, "utf8"));
-      s.stop("SCOPE.md synced ✓");
-      return;
-    }
-  }
-
-  // Choose mode
   const mode = guardCancel(
     await select({
       message: "Bot data scope",
@@ -108,7 +64,6 @@ export async function configureBotScope() {
       await text({
         message: "Ranch UUID",
         placeholder: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
-        initialValue: current?.ranch_uuid ?? "",
         validate: (v) => {
           if (!v || !v.trim()) return "Ranch UUID is required";
           if (!UUID_RE.test(v.trim()))
@@ -119,15 +74,14 @@ export async function configureBotScope() {
     ranchUuid = ranchUuid.trim().toLowerCase();
   }
 
-  // Write workspace/SCOPE.md
   const content = buildScopeContent(mode, ranchUuid);
-  writeFileSync(SCOPE_PATH, content, "utf8");
 
-  // Sync to .tmpdata/workspace/ (live container volume)
   const s = spinner();
-  s.start("Syncing SCOPE.md to container volume…");
-  syncToDest(content);
-  s.stop("SCOPE.md synced ✓");
+  s.start("Writing SCOPE.md…");
+  writeFileSync(SCOPE_PATH, content, "utf8");
+  mkdirSync(WORKSPACE_DEST, { recursive: true });
+  writeFileSync(SCOPE_DEST, content, "utf8");
+  s.stop("SCOPE.md written and synced to container volume ✓");
 
   if (mode === "ranch") {
     log.success(`Bot scoped to ranch  ${ranchUuid}`);
