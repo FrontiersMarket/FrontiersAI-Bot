@@ -637,6 +637,18 @@ app.post("/setup/api/run", requireSetupAuth, async (req, res) => {
       );
       extra += `[config] gateway.trustedProxies exit=${proxiesResult.code}\n`;
 
+      const allowedOriginsResult = await runCmd(
+        OPENCLAW_NODE,
+        clawArgs([
+          "config",
+          "set",
+          "--json",
+          "gateway.controlUi.allowedOrigins",
+          '["http://localhost:8080", "http://127.0.0.1:18789"]',
+        ]),
+      );
+      extra += `[config] gateway.controlUi.allowedOrigins exit=${allowedOriginsResult.code}\n`;
+
       const sandboxResult = await runCmd(
         OPENCLAW_NODE,
         clawArgs([
@@ -730,6 +742,7 @@ app.post("/setup/api/set-allowed-origins", requireSetupAuth, async (req, res) =>
         .status(400)
         .json({ ok: false, output: "Missing or invalid origin\n" });
     }
+    const origins = [...new Set([origin, "http://127.0.0.1:18789"])];
     const result = await runCmd(
       OPENCLAW_NODE,
       clawArgs([
@@ -737,12 +750,12 @@ app.post("/setup/api/set-allowed-origins", requireSetupAuth, async (req, res) =>
         "set",
         "--json",
         "gateway.controlUi.allowedOrigins",
-        JSON.stringify([origin]),
+        JSON.stringify(origins),
       ]),
     );
     return res.json({
       ok: result.code === 0,
-      output: `[config] gateway.controlUi.allowedOrigins=${JSON.stringify([origin])} exit=${result.code}\n${result.output || ""}`,
+      output: `[config] gateway.controlUi.allowedOrigins=${JSON.stringify(origins)} exit=${result.code}\n${result.output || ""}`,
     });
   } catch (err) {
     return res
