@@ -16,6 +16,7 @@ export async function configureEnv() {
         `  OPENCLAW_GATEWAY_TOKEN ${existing.OPENCLAW_GATEWAY_TOKEN ? "set" : "not set (auto-generated)"}`,
         `  PORT                   ${existing.PORT ?? "8080 (default)"}`,
         `  ENABLE_WEB_TUI         ${existing.ENABLE_WEB_TUI ?? "false (default)"}`,
+        `  RANCH_UUID             ${existing.RANCH_UUID ? existing.RANCH_UUID : "⚠  not set (required — set in scope step)"}`,
       ].join("\n"),
       "Existing .env"
     );

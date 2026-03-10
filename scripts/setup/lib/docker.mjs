@@ -58,6 +58,9 @@ export function buildDockerRunArgs(vars) {
   if (vars.OPENCLAW_GATEWAY_TOKEN) {
     args.push("-e", `OPENCLAW_GATEWAY_TOKEN=${vars.OPENCLAW_GATEWAY_TOKEN}`);
   }
+  if (vars.RANCH_UUID) {
+    args.push("-e", `RANCH_UUID=${vars.RANCH_UUID}`);
+  }
   args.push("-v", `${ROOT}/.tmpdata:/data`);
   args.push(IMAGE_NAME);
   return args;

@@ -39,6 +39,9 @@ export function buildEnvContent(v) {
     "# Internal gateway port (usually no need to change)",
     `INTERNAL_GATEWAY_PORT=${v.INTERNAL_GATEWAY_PORT ?? "18789"}`,
     "",
+    "# Ranch UUID this bot is scoped to (set by pnpm setup:local → scope step)",
+    `RANCH_UUID=${v.RANCH_UUID ?? ""}`,
+    "",
   ].join("\n");
 }
 

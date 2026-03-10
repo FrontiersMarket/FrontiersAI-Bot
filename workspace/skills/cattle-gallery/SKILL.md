@@ -13,7 +13,6 @@ Before fetching any images:
 
 1. Check the active scope from `AGENTS.md → ## Active Scope` (already in context — no file read needed).
 2. If `mode: ranch` → always pass `ranch_uuid` filter in all queries. If the user asks for images from a different ranch, decline: _"That's not available in the current scope — I'm restricted to [Ranch Name] only. You'd need general mode for that."_ Do not attempt the query.
-3. If `mode: general` → no ranch filter required.
 
 ## Purpose
 
@@ -22,15 +21,16 @@ Retrieve and display visual media (photos) for livestock from the `public_galler
 ## Core Query Logic
 
 1.  **Identify the Animal:**
-    -   Resolve the animal's UUID using `public_livestock` (by `ear_tag_id` or `name`).
-    -   If the user asks for a ranch's images, resolve the `ranch_uuid`.
+
+    - Resolve the animal's UUID using `public_livestock` (by `ear_tag_id` or `name`).
+    - If the user asks for a ranch's images, resolve the `ranch_uuid`.
 
 2.  **Fetch Images:**
-    -   Query `alloydb_sync.public_gallery_item`
-    -   Filter by `livestock_uuid` (or `ranch_uuid` via join)
-    -   Filter `type LIKE 'image%'` (to exclude videos)
-    -   Filter `is_deleted = false` (soft deletes)
-    -   Order by `priority` ASC (primary images first) or `created_at` DESC (newest first).
+    - Query `alloydb_sync.public_gallery_item`
+    - Filter by `livestock_uuid` (or `ranch_uuid` via join)
+    - Filter `type LIKE 'image%'` (to exclude videos)
+    - Filter `is_deleted = false` (soft deletes)
+    - Order by `priority` ASC (primary images first) or `created_at` DESC (newest first).
 
 ## SQL Pattern
 
@@ -82,10 +82,12 @@ Adapt the format based on the channel/platform the user is messaging from.
 When the user is reaching from **Slack**, do NOT use Markdown image syntax (`![](url)`) — it does not render inline images in Slack.
 
 Instead, respond with:
-1. A short intro line (e.g. *"Here are the photos for Tag #1042 (Bella):"*)
+
+1. A short intro line (e.g. _"Here are the photos for Tag #1042 (Bella):"_)
 2. Each image URL on its **own line**, as a plain URL with no surrounding brackets or formatting. Slack will auto-unfurl these as inline image previews.
 
 **Slack example output:**
+
 ```
 Here are the photos for Tag #1042 (Bella):
 
@@ -99,21 +101,22 @@ https://storage.googleapis.com/.../image3.jpg
 Present the images using standard Markdown image syntax so they render inline.
 
 **Format:**
+
 ```markdown
 ### Photos for [Animal Name/Tag]
 
 ![2024-01-15](URL)
-*Uploaded Jan 15, 2024*
+_Uploaded Jan 15, 2024_
 ```
 
 **Example Output:**
+
 > **Photos for Tag #1042 (Bella)**
 >
-> ![2024-01-15](https://storage.googleapis.com/.../image.jpg)
-> *Uploaded Jan 15, 2024*
+> ![2024-01-15](https://storage.googleapis.com/.../image.jpg) > _Uploaded Jan 15, 2024_
 
 ## Constraints
 
--   **Limit:** Always limit results to 5-10 images to avoid flooding the chat.
--   **Videos:** Currently filters for `type LIKE 'image%'`. Videos may not render inline.
--   **Privacy:** Ensure URLs are signed or public (AlloyDB sync usually provides accessible GCS URLs).
+- **Limit:** Always limit results to 5-10 images to avoid flooding the chat.
+- **Videos:** Currently filters for `type LIKE 'image%'`. Videos may not render inline.
+- **Privacy:** Ensure URLs are signed or public (AlloyDB sync usually provides accessible GCS URLs).

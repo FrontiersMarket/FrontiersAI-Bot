@@ -8,6 +8,7 @@ import express from "express";
 import httpProxy from "http-proxy";
 import pty from "node-pty";
 import { WebSocketServer } from "ws";
+import { initSync, stopSync, syncState } from "./db-sync.js";
 
 const PORT = Number.parseInt(process.env.PORT ?? "8080", 10);
 const STATE_DIR =
@@ -75,6 +76,22 @@ const OPENCLAW_ENTRY =
 const OPENCLAW_NODE = process.env.OPENCLAW_NODE?.trim() || "node";
 
 const ENABLE_WEB_TUI = process.env.ENABLE_WEB_TUI?.toLowerCase() === "true";
+
+const RANCH_UUID = process.env.RANCH_UUID?.trim() || null;
+// DB lives alongside the state dir (e.g. /data/ranch_data.db)
+const DATA_DIR = path.dirname(STATE_DIR);
+const RANCH_DB_PATH =
+  process.env.RANCH_DB_PATH?.trim() ||
+  path.join(DATA_DIR, "ranch_data.db");
+
+function startSyncIfNeeded() {
+  if (!RANCH_UUID) {
+    console.warn("[db-sync] RANCH_UUID not configured — local DB sync disabled");
+    return;
+  }
+  if (syncState.initialized) return;
+  initSync(RANCH_UUID, RANCH_DB_PATH);
+}
 const TUI_IDLE_TIMEOUT_MS = Number.parseInt(
   process.env.TUI_IDLE_TIMEOUT_MS ?? "300000",
   10,
@@ -720,6 +737,8 @@ app.post("/setup/api/run", requireSetupAuth, async (req, res) => {
       extra += "\n[setup] Starting gateway...\n";
       await restartGateway();
       extra += "[setup] Gateway started.\n";
+      startSyncIfNeeded();
+      if (RANCH_UUID) extra += `[db-sync] Local DB sync started for ranch ${RANCH_UUID}.\n`;
     }
 
     return res.status(ok ? 200 : 500).json({
@@ -928,6 +947,57 @@ app.get("/setup/api/export", requireSetupAuth, async (_req, res) => {
     console.error("[export] error:", err);
     return res.status(500).json({ ok: false, error: `Export failed: ${err.message}` });
   }
+});
+
+app.get("/setup/api/sync-status", requireSetupAuth, (_req, res) => {
+  res.json({
+    ok: true,
+    ranchUuid: RANCH_UUID,
+    dbPath: RANCH_DB_PATH,
+    syncIntervalMs: parseInt(process.env.DB_SYNC_INTERVAL_MS ?? "300000", 10),
+    ...syncState,
+  });
+});
+
+app.post("/setup/api/sync-now", requireSetupAuth, (_req, res) => {
+  if (!RANCH_UUID) {
+    return res.status(400).json({ ok: false, error: "RANCH_UUID not configured" });
+  }
+  if (syncState.running) {
+    return res.json({ ok: true, message: "Sync already in progress" });
+  }
+  // Kick off async, don't await
+  import("./db-sync.js").then(({ runSync }) => {
+    runSync(RANCH_UUID, RANCH_DB_PATH).catch((err) =>
+      console.error(`[db-sync] manual sync failed: ${err.message}`)
+    );
+  });
+  return res.json({ ok: true, message: "Sync started" });
+});
+
+// Internal sync trigger — localhost only, no auth required.
+// Used by the OpenClaw cron job so it never needs SETUP_PASSWORD.
+app.post("/internal/sync-now", (req, res) => {
+  const addr = req.socket?.remoteAddress ?? "";
+  const isLocal =
+    addr === "127.0.0.1" ||
+    addr === "::1" ||
+    addr.startsWith("::ffff:127.");
+  if (!isLocal) {
+    return res.status(403).json({ ok: false, error: "localhost only" });
+  }
+  if (!RANCH_UUID) {
+    return res.status(400).json({ ok: false, error: "RANCH_UUID not configured" });
+  }
+  if (syncState.running) {
+    return res.json({ ok: true, message: "Sync already in progress" });
+  }
+  import("./db-sync.js").then(({ runSync }) => {
+    runSync(RANCH_UUID, RANCH_DB_PATH).catch((err) =>
+      console.error(`[db-sync] cron sync failed: ${err.message}`)
+    );
+  });
+  return res.json({ ok: true, message: "Sync started" });
 });
 
 app.get("/tui", requireSetupAuth, (_req, res) => {
@@ -1154,6 +1224,7 @@ const server = app.listen(PORT, () => {
         console.warn(`[wrapper] doctor --fix failed: ${err.message}`);
       }
       await ensureGatewayRunning();
+      startSyncIfNeeded();
     })().catch((err) => {
       console.error(`[wrapper] failed to start gateway at boot: ${err.message}`);
     });
@@ -1207,6 +1278,8 @@ server.on("upgrade", async (req, socket, head) => {
 async function gracefulShutdown(signal) {
   console.log(`[wrapper] received ${signal}, shutting down`);
   shuttingDown = true;
+
+  stopSync();
 
   if (setupRateLimiter.cleanupInterval) {
     clearInterval(setupRateLimiter.cleanupInterval);

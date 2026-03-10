@@ -45,7 +45,7 @@ Before anything else, extract and store:
 If you cannot determine the channel ID from the request context, ask the user before proceeding. Do not assume or guess — uploading to the wrong channel is worse than asking.
 
 ### Step 1: Gather data
-Pull all required data using the **alloydb-sync** skill before generating the report. Query exactly what the report needs — livestock records, weight history, BCS, groups, land, vaccination records, etc. Never build a report with incomplete or placeholder data.
+Pull all required data using the **local-db** skill before generating the report. Query exactly what the report needs — livestock records, weight history, BCS, groups, land, vaccination records, etc. Never build a report with incomplete or placeholder data.
 
 ### Step 2: Build report JSON and generate
 Write the structured JSON to a temp file and run the generator:
@@ -118,9 +118,9 @@ Use the `message send` OpenClaw tool (not a shell command):
 rm -f /tmp/report_data.json /tmp/<filename>.pdf
 ```
 
-## Data Gathering (alloydb-sync Integration)
+## Data Gathering (local-db)
 
-Before generating any report, use the **alloydb-sync** skill to fetch all needed data. Match query scope to report type:
+Before generating any report, use the **local-db** skill to fetch all needed data. Match query scope to report type:
 
 | Report Type | Key Data to Fetch |
 |-------------|-------------------|
@@ -130,7 +130,7 @@ Before generating any report, use the **alloydb-sync** skill to fetch all needed
 | Ranch Overview | ranch record, all groups, livestock counts, avg metrics |
 | Camera Events | ranch record, cameras, video_events with counts |
 
-Always apply `WHERE is_deleted = false` on all entity and event tables (except `ranch`). See the alloydb-sync skill for query patterns and schema reference.
+Always apply `WHERE is_deleted = 0` on all entity and event tables (except `ranch`). See the local-db skill for query patterns and schema reference.
 
 ## Communication Rules
 

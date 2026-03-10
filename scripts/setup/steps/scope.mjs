@@ -1,8 +1,9 @@
-import { text, select, log, spinner } from "@clack/prompts";
+import { text, log, spinner } from "@clack/prompts";
 import { writeFileSync, readFileSync, mkdirSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
-import { WORKSPACE_SRC, WORKSPACE_DEST, SCOPE_FILE } from "../lib/constants.mjs";
+import { WORKSPACE_SRC, WORKSPACE_DEST, SCOPE_FILE, ENV_PATH } from "../lib/constants.mjs";
 import { guardCancel } from "../lib/utils.mjs";
+import { parseEnvFile } from "../lib/env-file.mjs";
 
 const SCOPE_PATH = resolve(WORKSPACE_SRC, SCOPE_FILE);
 const SCOPE_DEST = resolve(WORKSPACE_DEST, SCOPE_FILE);
@@ -18,19 +19,15 @@ const SCOPE_MARKER_END = "<!-- SCOPE:END -->";
  * scope is part of the auto-loaded agent context — no tool call required on
  * the first user message.
  */
-function injectScopeIntoAgents(mode, ranchUuid, agentsPath) {
+function injectScopeIntoAgents(ranchUuid, agentsPath) {
   if (!existsSync(agentsPath)) return;
-
-  const lines =
-    mode === "ranch"
-      ? [`mode: ranch`, `ranch_uuid: ${ranchUuid}`]
-      : [`mode: general`];
 
   const block = [
     SCOPE_MARKER_START,
     "## Active Scope",
     "",
-    ...lines,
+    `mode: ranch`,
+    `ranch_uuid: ${ranchUuid}`,
     "",
     "*(Auto-updated by `pnpm setup:local` — do not edit manually)*",
     SCOPE_MARKER_END,
@@ -53,94 +50,75 @@ function injectScopeIntoAgents(mode, ranchUuid, agentsPath) {
   writeFileSync(agentsPath, updated, "utf8");
 }
 
-function buildScopeContent(mode, ranchUuid = null) {
-  if (mode === "ranch") {
-    return [
-      "# SCOPE.md — Active Data Scope",
-      "",
-      "mode: ranch",
-      `ranch_uuid: ${ranchUuid}`,
-      "",
-      "# To return to general mode, change to:",
-      "# mode: general",
-      "#",
-      "# To scope to a different ranch:",
-      "# mode: ranch",
-      "# ranch_uuid: <uuid>",
-      "",
-    ].join("\n");
-  }
+function buildScopeContent(ranchUuid) {
   return [
     "# SCOPE.md — Active Data Scope",
     "",
-    "mode: general",
+    "mode: ranch",
+    `ranch_uuid: ${ranchUuid}`,
     "",
-    "# To scope to a specific ranch, change to:",
-    "# mode: ranch",
-    "# ranch_uuid: <uuid>",
+    "# To scope to a different ranch, change ranch_uuid and re-run pnpm setup:local",
     "",
   ].join("\n");
 }
 
 /**
  * Read the current scope from SCOPE.md and re-inject it into the dest AGENTS.md.
- * Call this after sync-workspace.sh to ensure the sync doesn't overwrite the injection.
+ * Call this after workspace sync to ensure the sync doesn't overwrite the injection.
  */
 export function reInjectScope() {
   const scopePath = SCOPE_PATH;
   if (!existsSync(scopePath)) return;
 
   const raw = readFileSync(scopePath, "utf8");
-  const modeMatch = raw.match(/^mode:\s*(\S+)/m);
   const uuidMatch = raw.match(/^ranch_uuid:\s*(\S+)/m);
-  if (!modeMatch) return;
+  if (!uuidMatch) return;
 
-  const mode = modeMatch[1];
-  const ranchUuid = uuidMatch ? uuidMatch[1] : null;
+  const ranchUuid = uuidMatch[1];
   const agentsDest = resolve(WORKSPACE_DEST, AGENTS_FILE);
-  injectScopeIntoAgents(mode, ranchUuid, agentsDest);
+  injectScopeIntoAgents(ranchUuid, agentsDest);
+}
+
+/**
+ * Update (or append) RANCH_UUID in the .env file without touching other vars.
+ */
+function writeRanchUuidToEnv(ranchUuid) {
+  if (!existsSync(ENV_PATH)) return;
+
+  let content = readFileSync(ENV_PATH, "utf8");
+
+  if (/^RANCH_UUID=/m.test(content)) {
+    content = content.replace(/^RANCH_UUID=.*/m, `RANCH_UUID=${ranchUuid}`);
+  } else {
+    content = content.trimEnd() + `\n\n# Ranch UUID this bot is scoped to\nRANCH_UUID=${ranchUuid}\n`;
+  }
+
+  writeFileSync(ENV_PATH, content, "utf8");
 }
 
 export async function configureBotScope() {
-  const mode = guardCancel(
-    await select({
-      message: "Bot data scope",
-      options: [
-        {
-          value: "ranch",
-          label: "Ranch scope",
-          hint: "bot only sees data for one specific ranch",
-        },
-        {
-          value: "general",
-          label: "General scope",
-          hint: "bot has access to all ranches",
-        },
-      ],
+  const existing = parseEnvFile();
+  const existingUuid = existing.RANCH_UUID?.trim() ?? "";
+
+  const ranchUuid = guardCancel(
+    await text({
+      message: "Ranch UUID this bot is scoped to",
+      placeholder: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+      initialValue: existingUuid,
+      validate: (v) => {
+        if (!v || !v.trim()) return "Ranch UUID is required — this bot must always be scoped to a ranch";
+        if (!UUID_RE.test(v.trim()))
+          return "Must be a valid UUID  (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)";
+      },
     })
   );
 
-  let ranchUuid = null;
-
-  if (mode === "ranch") {
-    ranchUuid = guardCancel(
-      await text({
-        message: "Ranch UUID",
-        placeholder: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
-        validate: (v) => {
-          if (!v || !v.trim()) return "Ranch UUID is required";
-          if (!UUID_RE.test(v.trim()))
-            return "Must be a valid UUID  (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)";
-        },
-      })
-    );
-    ranchUuid = ranchUuid.trim().toLowerCase();
-  }
-
-  const content = buildScopeContent(mode, ranchUuid);
+  const uuid = ranchUuid.trim().toLowerCase();
+  const content = buildScopeContent(uuid);
 
   const s = spinner();
-  s.start("Writing SCOPE.md and injecting scope into AGENTS.md…");
+  s.start("Writing SCOPE.md, injecting scope into AGENTS.md, updating .env…");
+
   writeFileSync(SCOPE_PATH, content, "utf8");
   mkdirSync(WORKSPACE_DEST, { recursive: true });
   writeFileSync(SCOPE_DEST, content, "utf8");
@@ -149,13 +127,13 @@ export async function configureBotScope() {
   // part of the auto-loaded container context — no tool call needed on first message.
   // The source workspace/AGENTS.md is NOT touched to avoid git noise.
   const agentsDest = resolve(WORKSPACE_DEST, AGENTS_FILE);
-  injectScopeIntoAgents(mode, ranchUuid, agentsDest);
+  injectScopeIntoAgents(uuid, agentsDest);
 
-  s.stop("SCOPE.md written and scope injected into AGENTS.md ✓");
+  // Persist RANCH_UUID to .env so the server and DB sync service can use it
+  writeRanchUuidToEnv(uuid);
 
-  if (mode === "ranch") {
-    log.success(`Bot scoped to ranch  ${ranchUuid}`);
-  } else {
-    log.success("Bot set to general scope");
-  }
+  s.stop("Scope configured ✓");
+  log.success(`Bot scoped to ranch  ${uuid}`);
+
+  return uuid;
 }

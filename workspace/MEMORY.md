@@ -1,9 +1,5 @@
 # MEMORY.md — Long-Term Bot Memory
 
-## Data Security in Ranch Scope
-
-When `mode: ranch` is active, apply these rules to **every** data access without exception:
-
 ### 1. Direct ranch access
 
 Only access the ranch row matching the scoped `ranch_uuid`. Never read or surface data for any other ranch.

@@ -1,4 +1,4 @@
-import { watch, copyFileSync, mkdirSync, readdirSync, existsSync, readFileSync } from "node:fs";
+import { watch, copyFileSync, mkdirSync, readdirSync, existsSync, readFileSync, rmSync } from "node:fs";
 import { join, dirname, resolve } from "node:path";
 import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
@@ -91,13 +91,85 @@ function syncSkillsDir() {
   return files.length;
 }
 
+
+// ---------------------------------------------------------------------------
+// Deletion mirroring — remove dest files/dirs that no longer exist in src
+// ---------------------------------------------------------------------------
+
+/** Remove top-level .md files from dest that no longer exist in src. */
+function cleanupDeletedMdFiles() {
+  if (!existsSync(WORKSPACE_DEST)) return;
+  for (const file of readdirSync(WORKSPACE_DEST)) {
+    if (!file.endsWith(".md")) continue;
+    if (!existsSync(join(WORKSPACE_SRC, file))) {
+      try {
+        rmSync(join(WORKSPACE_DEST, file));
+        console.log(`[${timestamp()}] removed ${file}`);
+      } catch (err) {
+        console.error(`[${timestamp()}] failed to remove ${file}: ${err.message}`);
+      }
+    }
+  }
+}
+
+/** Remove skill directories from dest whose skill no longer exists in src. */
+function cleanupDeletedSkills() {
+  const skillsSrc = join(WORKSPACE_SRC, SKILLS_DIR);
+  const skillsDest = join(WORKSPACE_DEST, SKILLS_DIR);
+  if (!existsSync(skillsDest)) return;
+  for (const entry of readdirSync(skillsDest, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    if (!existsSync(join(skillsSrc, entry.name))) {
+      try {
+        rmSync(join(skillsDest, entry.name), { recursive: true, force: true });
+        console.log(`[${timestamp()}] removed skills/${entry.name}/`);
+      } catch (err) {
+        console.error(`[${timestamp()}] failed to remove skills/${entry.name}: ${err.message}`);
+      }
+    }
+  }
+}
+
+/** Remove individual files inside skills that no longer exist in src.
+ *  Skips excluded dirs (node_modules etc.) so installed deps are preserved. */
+function cleanupDeletedSkillFiles() {
+  const skillsSrc = join(WORKSPACE_SRC, SKILLS_DIR);
+  const skillsDest = join(WORKSPACE_DEST, SKILLS_DIR);
+  if (!existsSync(skillsDest)) return;
+  for (const entry of readdirSync(skillsDest, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const skillDestDir = join(skillsDest, entry.name);
+    const skillSrcDir = join(skillsSrc, entry.name);
+    if (!existsSync(skillSrcDir)) continue; // whole skill handled by cleanupDeletedSkills
+    for (const destFile of walkDir(skillDestDir)) {
+      const relToSkill = destFile.slice(skillDestDir.length + 1);
+      if (!existsSync(join(skillSrcDir, relToSkill))) {
+        try {
+          rmSync(destFile);
+          console.log(`[${timestamp()}] removed skills/${entry.name}/${relToSkill}`);
+        } catch (err) {
+          console.error(`[${timestamp()}] failed to remove ${destFile}: ${err.message}`);
+        }
+      }
+    }
+  }
+}
+
 function syncWorkspace() {
   mkdirSync(WORKSPACE_DEST, { recursive: true });
+
+  // Copy additions/updates
   const mdFiles = readdirSync(WORKSPACE_SRC).filter((f) => f.endsWith(".md"));
   for (const file of mdFiles) {
     syncFile(WORKSPACE_SRC, WORKSPACE_DEST, file);
   }
   const skillCount = syncSkillsDir();
+
+  // Mirror deletions
+  cleanupDeletedMdFiles();
+  cleanupDeletedSkills();
+  cleanupDeletedSkillFiles();
+
   console.log(`[${timestamp()}] workspace sync complete (${mdFiles.length} .md files, ${skillCount} skill files)`);
 }
 
