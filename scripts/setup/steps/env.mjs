@@ -16,7 +16,7 @@ export async function configureEnv() {
         `  OPENCLAW_GATEWAY_TOKEN ${existing.OPENCLAW_GATEWAY_TOKEN ? "set" : "not set (auto-generated)"}`,
         `  PORT                   ${existing.PORT ?? "8080 (default)"}`,
         `  ENABLE_WEB_TUI         ${existing.ENABLE_WEB_TUI ?? "false (default)"}`,
-        `  RANCH_UUID             ${existing.RANCH_UUID ? existing.RANCH_UUID : "⚠  not set (required — set in scope step)"}`,
+        `  ENABLE_CHAT_COMPLETIONS ${existing.ENABLE_CHAT_COMPLETIONS ?? "true (default)"}`,
       ].join("\n"),
       "Existing .env"
     );
@@ -99,6 +99,7 @@ export async function configureEnv() {
     OPENCLAW_WORKSPACE_DIR: existing.OPENCLAW_WORKSPACE_DIR ?? "/data/workspace",
     PORT: port.trim(),
     ENABLE_WEB_TUI: enableTui ? "true" : "false",
+    ENABLE_CHAT_COMPLETIONS: existing.ENABLE_CHAT_COMPLETIONS ?? "true",
     INTERNAL_GATEWAY_PORT: existing.INTERNAL_GATEWAY_PORT ?? "18789",
   };
 

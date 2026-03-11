@@ -2,14 +2,18 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { ENV_PATH } from "./constants.mjs";
 
 export function parseEnvFile(path = ENV_PATH) {
-  if (!existsSync(path)) return {};
+  if (!existsSync(path)) {
+    return {};
+  }
   const vars = {};
   for (const line of readFileSync(path, "utf8").split("\n")) {
     const t = line.trim();
     if (!t || t.startsWith("#")) continue;
     const eq = t.indexOf("=");
     if (eq === -1) continue;
-    vars[t.slice(0, eq).trim()] = t.slice(eq + 1).trim();
+    const key = t.slice(0, eq).trim();
+    const value = t.slice(eq + 1).trim();
+    vars[key] = value;
   }
   return vars;
 }
@@ -36,11 +40,11 @@ export function buildEnvContent(v) {
     "# Enable browser-based terminal at /tui",
     `ENABLE_WEB_TUI=${v.ENABLE_WEB_TUI ?? "false"}`,
     "",
+    "# Enable chat completions endpoint (/v1/chat/completions)",
+    `ENABLE_CHAT_COMPLETIONS=${v.ENABLE_CHAT_COMPLETIONS ?? "true"}`,
+    "",
     "# Internal gateway port (usually no need to change)",
     `INTERNAL_GATEWAY_PORT=${v.INTERNAL_GATEWAY_PORT ?? "18789"}`,
-    "",
-    "# Ranch UUID this bot is scoped to (set by pnpm setup:local → scope step)",
-    `RANCH_UUID=${v.RANCH_UUID ?? ""}`,
     "",
   ].join("\n");
 }
