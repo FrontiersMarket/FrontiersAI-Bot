@@ -51,6 +51,7 @@ export function buildDockerRunArgs(vars) {
     "-e", `PORT=${port}`,
     "-e", `SETUP_PASSWORD=${vars.SETUP_PASSWORD ?? ""}`,
     "-e", `ENABLE_WEB_TUI=${vars.ENABLE_WEB_TUI ?? "false"}`,
+    "-e", `ENABLE_CHAT_COMPLETIONS=${vars.ENABLE_CHAT_COMPLETIONS ?? "false"}`,
     "-e", `OPENCLAW_STATE_DIR=${vars.OPENCLAW_STATE_DIR ?? "/data/.openclaw"}`,
     "-e", `OPENCLAW_WORKSPACE_DIR=${vars.OPENCLAW_WORKSPACE_DIR ?? "/data/workspace"}`,
     "-e", `INTERNAL_GATEWAY_PORT=${vars.INTERNAL_GATEWAY_PORT ?? "18789"}`,

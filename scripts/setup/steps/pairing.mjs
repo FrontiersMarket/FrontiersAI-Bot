@@ -25,7 +25,7 @@ async function waitForPendingDevices() {
  * The file lives on the shared volume so the container sees it directly.
  * Returns true if the file was modified, false if already correct or missing.
  */
-function patchOpenclaw(port) {
+function patchOpenclaw(port, enableChatCompletions = false) {
   const jsonPath = resolve(ROOT, ".tmpdata", ".openclaw", "openclaw.json");
   if (!existsSync(jsonPath)) return false;
 
@@ -41,6 +41,17 @@ function patchOpenclaw(port) {
   if (missing.length > 0) {
     config.gateway.controlUi.allowedOrigins = [...origins, ...missing];
     changed = true;
+  }
+
+  // Patch gateway.http.endpoints.chatCompletions.enabled
+  if (enableChatCompletions) {
+    config.gateway.http ??= {};
+    config.gateway.http.endpoints ??= {};
+    config.gateway.http.endpoints.chatCompletions ??= {};
+    if (config.gateway.http.endpoints.chatCompletions.enabled !== true) {
+      config.gateway.http.endpoints.chatCompletions.enabled = true;
+      changed = true;
+    }
   }
 
   // Patch tools.allow + remove tools.profile
@@ -113,15 +124,43 @@ export async function runPairingFlow(vars) {
     s.start("Patching openclaw.json (allowedOrigins + tools.allow)…");
     let patched = false;
     try {
-      patched = patchOpenclaw(port);
+      const enableChatCompletions = vars.ENABLE_CHAT_COMPLETIONS === "true";
+      patched = patchOpenclaw(port, enableChatCompletions);
+      const patches = ["allowedOrigins", "tools.allow", "agents.defaults"];
+      if (enableChatCompletions) {
+        patches.push("chatCompletions.enabled");
+      }
       s.stop(
         patched
-          ? `Patched openclaw.json (allowedOrigins, tools.allow, agents.defaults) ✓`
+          ? `Patched openclaw.json (${patches.join(", ")}) ✓`
           : "openclaw.json already up to date — no change needed ✓"
       );
     } catch (err) {
       s.stop("Could not patch openclaw.json");
       log.warn(`  ${err.message}`);
+    }
+  }
+
+  // ── Configure chat completions via CLI (fallback/ensure) ────────────────
+  // Use CLI to ensure the setting is applied even if file patch didn't work
+  {
+    const enableChatCompletions = vars.ENABLE_CHAT_COMPLETIONS === "true";
+    if (enableChatCompletions) {
+      const s = spinner();
+      s.start("Configuring chat completions endpoint via CLI…");
+      try {
+        await execOpenclaw([
+          "config",
+          "set",
+          "gateway.http.endpoints.chatCompletions.enabled",
+          "true",
+        ], 15_000);
+        s.stop("Chat completions enabled ✓");
+      } catch (err) {
+        s.stop("Could not configure chat completions via CLI");
+        log.warn(`  ${err.message}`);
+        log.warn("  You may need to set it manually: docker exec " + CONTAINER_NAME + " openclaw config set gateway.http.endpoints.chatCompletions.enabled true");
+      }
     }
   }
 

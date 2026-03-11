@@ -43,7 +43,7 @@ async function main() {
   const vars = await configureEnv();
 
   // Phase 4 — GCP service-account key (enforced)
-  await setupGcpKey();
+  await setupGcpKey(vars);
 
   // Phase 5 — bot data scope (must run before container so RANCH_UUID is in env)
   const ranchUuid = await configureBotScope();
