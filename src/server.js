@@ -75,6 +75,7 @@ const OPENCLAW_ENTRY =
 const OPENCLAW_NODE = process.env.OPENCLAW_NODE?.trim() || "node";
 
 const ENABLE_WEB_TUI = process.env.ENABLE_WEB_TUI?.toLowerCase() === "true";
+const ENABLE_CHAT_COMPLETIONS = process.env.ENABLE_CHAT_COMPLETIONS?.toLowerCase() === "true";
 const TUI_IDLE_TIMEOUT_MS = Number.parseInt(
   process.env.TUI_IDLE_TIMEOUT_MS ?? "300000",
   10,
@@ -1100,12 +1101,34 @@ proxy.on("error", (err, _req, res) => {
 proxy.on("proxyReq", (proxyReq, req, res) => {
   proxyReq.setHeader("Authorization", `Bearer ${OPENCLAW_GATEWAY_TOKEN}`);
   proxyReq.setHeader("Origin", GATEWAY_TARGET);
+
+  // Re-stream body consumed by express.json() middleware
+  if (req.body && Object.keys(req.body).length > 0) {
+    const bodyData = JSON.stringify(req.body);
+    proxyReq.setHeader("Content-Type", "application/json");
+    proxyReq.setHeader("Content-Length", Buffer.byteLength(bodyData));
+    proxyReq.write(bodyData);
+  }
 });
 
 proxy.on("proxyReqWs", (proxyReq, req, socket, options, head) => {
   proxyReq.setHeader("Authorization", `Bearer ${OPENCLAW_GATEWAY_TOKEN}`);
   proxyReq.setHeader("Origin", GATEWAY_TARGET);
 });
+
+// Chat completions endpoint (if enabled)
+if (ENABLE_CHAT_COMPLETIONS) {
+  app.post("/v1/chat/completions", (req, res, next) => {
+    const auth = req.headers.authorization || "";
+    const token = auth.startsWith("Bearer ") ? auth.slice(7) : null;
+    const tokenHash = token ? crypto.createHash("sha256").update(token).digest() : null;
+    const expectedHash = crypto.createHash("sha256").update(OPENCLAW_GATEWAY_TOKEN).digest();
+    if (!tokenHash || !crypto.timingSafeEqual(tokenHash, expectedHash)) {
+      return res.status(401).json({ error: { message: "Unauthorized", type: "auth_error" } });
+    }
+    return proxy.web(req, res, { target: GATEWAY_TARGET });
+  });
+}
 
 app.use(async (req, res) => {
   if (!isConfigured() && !req.path.startsWith("/setup")) {
@@ -1141,6 +1164,7 @@ const server = app.listen(PORT, () => {
   console.log(`[wrapper] listening on port ${PORT}`);
   console.log(`[wrapper] setup wizard: http://localhost:${PORT}/setup`);
   console.log(`[wrapper] web TUI: ${ENABLE_WEB_TUI ? "enabled" : "disabled"}`);
+  console.log(`[wrapper] chat completions: ${ENABLE_CHAT_COMPLETIONS ? "enabled" : "disabled"}`);
   console.log(`[wrapper] configured: ${isConfigured()}`);
 
   if (isConfigured()) {

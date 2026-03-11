@@ -19,6 +19,7 @@ import { intro, outro, note } from "@clack/prompts";
 import { checkPrerequisites } from "./steps/prerequisites.mjs";
 import { checkVolume } from "./steps/volume-check.mjs";
 import { configureEnv } from "./steps/env.mjs";
+import { configureChatCompletions } from "./steps/chat-completions.mjs";
 import { setupGcpKey } from "./steps/gcp-key.mjs";
 import { manageContainer } from "./steps/container.mjs";
 import { postStartCheck } from "./steps/post-start.mjs";
@@ -37,6 +38,10 @@ async function main() {
 
   // Phase 3 — .env
   const vars = await configureEnv();
+
+  // Phase 3.5 — Chat completions configuration
+  const chatCompletionsEnabled = await configureChatCompletions(vars);
+  vars.ENABLE_CHAT_COMPLETIONS = chatCompletionsEnabled ? "true" : "false";
 
   // Phase 3 — GCP service-account key (enforced)
   await setupGcpKey();

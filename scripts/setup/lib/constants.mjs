@@ -5,6 +5,7 @@ const __dir = dirname(fileURLToPath(import.meta.url));
 
 export const ROOT = resolve(__dir, "../../..");
 export const ENV_PATH = resolve(ROOT, ".env");
+export const ENV_EXAMPLE_PATH = resolve(ROOT, ".env.example");
 export const RESOURCES_SRC = resolve(ROOT, "resources");
 export const RESOURCES_DEST = resolve(ROOT, ".tmpdata", "resources");
 export const WORKSPACE_SRC = resolve(ROOT, "workspace");

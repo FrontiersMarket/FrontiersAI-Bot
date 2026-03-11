@@ -5,6 +5,7 @@ import { listPendingDevices, approveDevice, execOpenclaw } from "../lib/docker.m
 import { guardCancel, sleep, execFileAsync, pollHealth } from "../lib/utils.mjs";
 import { CONTAINER_NAME, ROOT, RESOURCES_SRC, GCP_KEY_FILE } from "../lib/constants.mjs";
 import { reInjectScope } from "./scope.mjs";
+import { applyChatCompletionsConfig } from "./chat-completions.mjs";
 
 const POLL_INTERVAL_MS = 3000;
 const POLL_MAX_ATTEMPTS = 10; // 30s total
@@ -122,6 +123,18 @@ export async function runPairingFlow(vars) {
     } catch (err) {
       s.stop("Could not patch openclaw.json");
       log.warn(`  ${err.message}`);
+    }
+  }
+
+  // ── Apply chat completions configuration if enabled ────────────────────────
+  {
+    try {
+      const chatCompletionsPatched = applyChatCompletionsConfig();
+      if (chatCompletionsPatched) {
+        log.success("Applied chat completions configuration to openclaw.json");
+      }
+    } catch (err) {
+      log.warn(`Could not apply chat completions config: ${err.message}`);
     }
   }
 

@@ -1,13 +1,15 @@
 import { text, password, confirm, select, spinner, note, log } from "@clack/prompts";
 import { parseEnvFile, writeEnvFile } from "../lib/env-file.mjs";
 import { generateToken, guardCancel } from "../lib/utils.mjs";
-import { ENV_PATH } from "../lib/constants.mjs";
+import { ENV_PATH, ENV_EXAMPLE_PATH } from "../lib/constants.mjs";
+import { existsSync } from "node:fs";
 
 export async function configureEnv() {
+  const envExists = existsSync(ENV_PATH);
   const existing = parseEnvFile();
   const hasExisting = Object.keys(existing).length > 0;
 
-  if (hasExisting) {
+  if (envExists && hasExisting) {
     note(
       [
         `  File: ${ENV_PATH}`,
@@ -16,6 +18,7 @@ export async function configureEnv() {
         `  OPENCLAW_GATEWAY_TOKEN ${existing.OPENCLAW_GATEWAY_TOKEN ? "set" : "not set (auto-generated)"}`,
         `  PORT                   ${existing.PORT ?? "8080 (default)"}`,
         `  ENABLE_WEB_TUI         ${existing.ENABLE_WEB_TUI ?? "false (default)"}`,
+        `  ENABLE_CHAT_COMPLETIONS ${existing.ENABLE_CHAT_COMPLETIONS ?? "true (default)"}`,
       ].join("\n"),
       "Existing .env"
     );
@@ -24,6 +27,16 @@ export async function configureEnv() {
       await confirm({ message: "Reconfigure .env?", initialValue: false })
     );
     if (!reconfigure) return existing;
+  } else if (!envExists && hasExisting) {
+    // Reading from .env.example
+    note(
+      [
+        `  No .env file found. Using defaults from .env.example`,
+        "",
+        `  These values will be used as defaults. You can modify them below.`,
+      ].join("\n"),
+      "Creating .env from template"
+    );
   }
 
   // ── SETUP_PASSWORD ──────────────────────────────────────────────────────
@@ -98,6 +111,7 @@ export async function configureEnv() {
     OPENCLAW_WORKSPACE_DIR: existing.OPENCLAW_WORKSPACE_DIR ?? "/data/workspace",
     PORT: port.trim(),
     ENABLE_WEB_TUI: enableTui ? "true" : "false",
+    ENABLE_CHAT_COMPLETIONS: existing.ENABLE_CHAT_COMPLETIONS ?? "true",
     INTERNAL_GATEWAY_PORT: existing.INTERNAL_GATEWAY_PORT ?? "18789",
   };
 

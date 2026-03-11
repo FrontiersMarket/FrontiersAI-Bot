@@ -151,6 +151,7 @@ The bot requires a GCP service account JSON key file to access Google Cloud serv
 | `INTERNAL_GATEWAY_PORT`  | No          | `18789`                                              | Gateway internal port             |
 | `OPENCLAW_ENTRY`         | No          | `/usr/local/lib/node_modules/openclaw/dist/entry.js` | Path to OpenClaw entry            |
 | `ENABLE_WEB_TUI`         | No          | `false`                                              | Enable browser terminal at `/tui` |
+| `ENABLE_CHAT_COMPLETIONS` | No          | `true`                                               | Enable chat completions endpoint at `/v1/chat/completions` |
 | `TUI_IDLE_TIMEOUT_MS`    | No          | `300000` (5 min)                                     | TUI idle disconnect timeout       |
 | `TUI_MAX_SESSION_MS`     | No          | `1800000` (30 min)                                   | TUI max session duration          |
 
