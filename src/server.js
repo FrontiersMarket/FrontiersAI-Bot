@@ -3,6 +3,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { Readable } from "node:stream";
 
 import express from "express";
 import httpProxy from "http-proxy";
@@ -1185,18 +1186,17 @@ proxy.on("proxyReq", (proxyReq, req, res) => {
   proxyReq.setHeader("Authorization", `Bearer ${OPENCLAW_GATEWAY_TOKEN}`);
   proxyReq.setHeader("Origin", GATEWAY_TARGET);
   
-  // Re-stream body consumed by express.json() middleware when chat completions are enabled
-  // Only re-stream for methods that can legitimately have bodies and when Content-Type is JSON
-  if (ENABLE_CHAT_COMPLETIONS && 
+  // Fix Content-Length for bodies consumed by express.json() middleware
+  // (actual body data is passed as buffer in proxy.web() call below)
+  if (ENABLE_CHAT_COMPLETIONS &&
       ['POST', 'PUT', 'PATCH'].includes(req.method) &&
-      req.body && 
+      req.body &&
       Object.keys(req.body).length > 0) {
     const contentType = req.headers['content-type']?.toLowerCase() || '';
     if (contentType.includes('application/json')) {
       const bodyData = JSON.stringify(req.body);
       proxyReq.setHeader("Content-Type", "application/json");
       proxyReq.setHeader("Content-Length", Buffer.byteLength(bodyData));
-      proxyReq.write(bodyData);
     }
   }
 });
@@ -1231,6 +1231,15 @@ app.use(async (req, res) => {
 
   if (req.path === "/openclaw" && !req.query.token) {
     return res.redirect(`/openclaw?token=${OPENCLAW_GATEWAY_TOKEN}`);
+  }
+
+  if (ENABLE_CHAT_COMPLETIONS &&
+      ['POST', 'PUT', 'PATCH'].includes(req.method) &&
+      req.body &&
+      Object.keys(req.body).length > 0 &&
+      (req.headers['content-type']?.toLowerCase() || '').includes('application/json')) {
+    const bodyData = JSON.stringify(req.body);
+    return proxy.web(req, res, { target: GATEWAY_TARGET, buffer: Readable.from(bodyData) });
   }
 
   return proxy.web(req, res, { target: GATEWAY_TARGET });
