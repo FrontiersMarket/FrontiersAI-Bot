@@ -1186,11 +1186,18 @@ proxy.on("proxyReq", (proxyReq, req, res) => {
   proxyReq.setHeader("Origin", GATEWAY_TARGET);
   
   // Re-stream body consumed by express.json() middleware when chat completions are enabled
-  if (ENABLE_CHAT_COMPLETIONS && req.body && Object.keys(req.body).length > 0) {
-    const bodyData = JSON.stringify(req.body);
-    proxyReq.setHeader("Content-Type", "application/json");
-    proxyReq.setHeader("Content-Length", Buffer.byteLength(bodyData));
-    proxyReq.write(bodyData);
+  // Only re-stream for methods that can legitimately have bodies and when Content-Type is JSON
+  if (ENABLE_CHAT_COMPLETIONS && 
+      ['POST', 'PUT', 'PATCH'].includes(req.method) &&
+      req.body && 
+      Object.keys(req.body).length > 0) {
+    const contentType = req.headers['content-type']?.toLowerCase() || '';
+    if (contentType.includes('application/json')) {
+      const bodyData = JSON.stringify(req.body);
+      proxyReq.setHeader("Content-Type", "application/json");
+      proxyReq.setHeader("Content-Length", Buffer.byteLength(bodyData));
+      proxyReq.write(bodyData);
+    }
   }
 });
 
