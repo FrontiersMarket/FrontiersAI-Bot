@@ -3,6 +3,7 @@ import { existsSync, readFileSync, mkdirSync, copyFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { RESOURCES_SRC, RESOURCES_DEST, GCP_KEY_FILE } from "../lib/constants.mjs";
 import { bail, guardCancel } from "../lib/utils.mjs";
+import { writeEnvFile } from "../lib/env-file.mjs";
 
 const KEY_DEST_REPO = resolve(RESOURCES_SRC, GCP_KEY_FILE);
 const KEY_DEST_TMPDATA = resolve(RESOURCES_DEST, GCP_KEY_FILE);
@@ -30,7 +31,7 @@ function syncKey(srcPath) {
   copyFileSync(srcPath, KEY_DEST_TMPDATA);
 }
 
-export async function setupGcpKey() {
+export async function setupGcpKey(vars) {
   const keyPresent = existsSync(KEY_DEST_REPO);
 
   if (keyPresent) {
@@ -72,6 +73,18 @@ export async function setupGcpKey() {
         mkdirSync(RESOURCES_DEST, { recursive: true });
         copyFileSync(KEY_DEST_REPO, KEY_DEST_TMPDATA);
         log.success("GCP key synced to .tmpdata/resources/");
+        
+        // ── ENABLE_CHAT_COMPLETIONS ─────────────────────────────────────────────
+        const enableChatCompletions = guardCancel(
+          await confirm({
+            message: "Enable chat completions endpoint?",
+            initialValue: vars.ENABLE_CHAT_COMPLETIONS === "true",
+          })
+        );
+
+        vars.ENABLE_CHAT_COMPLETIONS = enableChatCompletions ? "true" : "false";
+        writeEnvFile(vars);
+        log.success(".env updated with chat completions setting");
         return;
       }
     }
@@ -119,4 +132,16 @@ export async function setupGcpKey() {
   } catch {}
 
   log.success(`GCP key installed  (${serviceAccount})`);
+
+  // ── ENABLE_CHAT_COMPLETIONS ─────────────────────────────────────────────
+  const enableChatCompletions = guardCancel(
+    await confirm({
+      message: "Enable chat completions endpoint?",
+      initialValue: vars.ENABLE_CHAT_COMPLETIONS === "true",
+    })
+  );
+
+  vars.ENABLE_CHAT_COMPLETIONS = enableChatCompletions ? "true" : "false";
+  writeEnvFile(vars);
+  log.success(".env updated with chat completions setting");
 }

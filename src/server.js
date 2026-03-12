@@ -76,6 +76,7 @@ const OPENCLAW_ENTRY =
 const OPENCLAW_NODE = process.env.OPENCLAW_NODE?.trim() || "node";
 
 const ENABLE_WEB_TUI = process.env.ENABLE_WEB_TUI?.toLowerCase() === "true";
+const ENABLE_CHAT_COMPLETIONS = process.env.ENABLE_CHAT_COMPLETIONS?.toLowerCase() === "true";
 
 const RANCH_UUID = process.env.RANCH_UUID?.trim() || null;
 // DB lives alongside the state dir (e.g. /data/ranch_data.db)
@@ -666,6 +667,19 @@ app.post("/setup/api/run", requireSetupAuth, async (req, res) => {
       );
       extra += `[config] gateway.controlUi.allowedOrigins exit=${allowedOriginsResult.code}\n`;
 
+      if (ENABLE_CHAT_COMPLETIONS) {
+        const chatCompletionsResult = await runCmd(
+          OPENCLAW_NODE,
+          clawArgs([
+            "config",
+            "set",
+            "gateway.http.endpoints.chatCompletions.enabled",
+            "true",
+          ]),
+        );
+        extra += `[config] gateway.http.endpoints.chatCompletions.enabled=true exit=${chatCompletionsResult.code}\n`;
+      }
+
       const sandboxResult = await runCmd(
         OPENCLAW_NODE,
         clawArgs([
@@ -1170,6 +1184,21 @@ proxy.on("error", (err, _req, res) => {
 proxy.on("proxyReq", (proxyReq, req, res) => {
   proxyReq.setHeader("Authorization", `Bearer ${OPENCLAW_GATEWAY_TOKEN}`);
   proxyReq.setHeader("Origin", GATEWAY_TARGET);
+  
+  // Re-stream body consumed by express.json() middleware when chat completions are enabled
+  // Only re-stream for methods that can legitimately have bodies and when Content-Type is JSON
+  if (ENABLE_CHAT_COMPLETIONS && 
+      ['POST', 'PUT', 'PATCH'].includes(req.method) &&
+      req.body && 
+      Object.keys(req.body).length > 0) {
+    const contentType = req.headers['content-type']?.toLowerCase() || '';
+    if (contentType.includes('application/json')) {
+      const bodyData = JSON.stringify(req.body);
+      proxyReq.setHeader("Content-Type", "application/json");
+      proxyReq.setHeader("Content-Length", Buffer.byteLength(bodyData));
+      proxyReq.write(bodyData);
+    }
+  }
 });
 
 proxy.on("proxyReqWs", (proxyReq, req, socket, options, head) => {

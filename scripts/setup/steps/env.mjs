@@ -100,6 +100,7 @@ export async function configureEnv() {
     PORT: port.trim(),
     ENABLE_WEB_TUI: enableTui ? "true" : "false",
     INTERNAL_GATEWAY_PORT: existing.INTERNAL_GATEWAY_PORT ?? "18789",
+    ENABLE_CHAT_COMPLETIONS: existing.ENABLE_CHAT_COMPLETIONS ?? "false",
   };
 
   writeEnvFile(vars);
