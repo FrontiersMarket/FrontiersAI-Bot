@@ -262,6 +262,60 @@ _Option B — Docker extension panel (while connected to VM):_
 1. Open the Docker panel (whale icon in the sidebar)
 2. Right-click `frontiersai-bot` → **Attach Visual Studio Code**
 
+### 6. Access the Control UI / Dashboard remotely
+
+The gateway only listens on the container's loopback — you must use an SSH tunnel to reach it from your local machine.
+
+**Step 1 — Open the SSH tunnel** (keep this terminal open):
+
+```bash
+ssh -N -L 19000:127.0.0.1:8080 frontiersai-bot-production
+# or with the full gcloud host:
+ssh -N -L 19000:127.0.0.1:8080 frontiersai-bot-production.us-central1-a.frontiersmarketplace
+```
+
+**Step 2 — Open in browser:**
+
+- **Control UI**: http://localhost:19000/openclaw
+- **Web TUI**: http://localhost:19000/tui
+
+**Step 3 — Authenticate with the gateway token**
+
+If you see `unauthorized: gateway token missing`, the Control UI needs the bearer token. Find it in the config on the VM:
+
+```bash
+docker exec -it frontiersai-bot cat /data/.openclaw/openclaw.json | grep -A2 '"auth"'
+# Look for: "token": "<value>"
+```
+
+Then either:
+- Paste it into the **Settings panel** inside the Control UI, or
+- Open the UI with the token in the URL hash: `http://localhost:19000/openclaw#token=<value>`
+
+**Step 4 — Fix `gateway.remote.token` if CLI commands fail**
+
+If `openclaw devices list` (or any CLI command) fails with `gateway token missing`, sync the remote token in the config:
+
+```bash
+docker exec -it frontiersai-bot su - openclaw -c "openclaw config set gateway.remote.token <token>"
+```
+
+**Step 5 — Approve device pairing (first access or after container rebuild)**
+
+```bash
+# List pending pairing requests
+docker exec -it frontiersai-bot su - openclaw -c "openclaw devices list"
+
+# Approve by ID
+docker exec -it frontiersai-bot su - openclaw -c "openclaw devices approve <request-id>"
+```
+
+If you see `device token mismatch` in the browser, clear Local Storage + IndexedDB for `localhost:19000` in DevTools, refresh, and re-approve the new pairing request.
+
+> `allowInsecureAuth: true` removes the pairing redirect but does **not** bypass device approval — devices must still be explicitly approved via CLI.
+
+---
+
 ## FAQ
 
 **How do I access the setup page?**

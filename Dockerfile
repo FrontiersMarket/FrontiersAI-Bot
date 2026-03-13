@@ -10,7 +10,9 @@ RUN apt-get update \
     procps \
     python3 \
     python3-pip \
+    python3.11-venv \
     build-essential \
+    jq \
     sqlite3 \
   && curl -fsSL https://packages.cloud.google.com/apt/doc/apt-key.gpg \
     | gpg --dearmor -o /usr/share/keyrings/cloud.google.gpg \
