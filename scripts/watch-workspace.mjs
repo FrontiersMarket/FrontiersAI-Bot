@@ -12,6 +12,7 @@ const WORKSPACE_DEST = join(ROOT, ".tmpdata", "workspace");
 const RESOURCES_SRC = join(ROOT, "resources");
 const RESOURCES_DEST = join(ROOT, ".tmpdata", "resources");
 const SKILLS_DIR = "skills";
+const SCRIPTS_DIR = "scripts";
 const CONTAINER_NAME = "frontiersai-bot";
 const CONTAINER_WORKSPACE = "/data/workspace";
 
@@ -84,6 +85,17 @@ function syncSkillsDir() {
   const skillsSrc = join(WORKSPACE_SRC, SKILLS_DIR);
   if (!existsSync(skillsSrc)) return 0;
   const files = walkDir(skillsSrc);
+  for (const absPath of files) {
+    const relPath = absPath.slice(WORKSPACE_SRC.length + 1);
+    syncFile(WORKSPACE_SRC, WORKSPACE_DEST, relPath);
+  }
+  return files.length;
+}
+
+function syncScriptsDir() {
+  const scriptsSrc = join(WORKSPACE_SRC, SCRIPTS_DIR);
+  if (!existsSync(scriptsSrc)) return 0;
+  const files = walkDir(scriptsSrc);
   for (const absPath of files) {
     const relPath = absPath.slice(WORKSPACE_SRC.length + 1);
     syncFile(WORKSPACE_SRC, WORKSPACE_DEST, relPath);
@@ -164,13 +176,14 @@ function syncWorkspace() {
     syncFile(WORKSPACE_SRC, WORKSPACE_DEST, file);
   }
   const skillCount = syncSkillsDir();
+  const scriptCount = syncScriptsDir();
 
   // Mirror deletions
   cleanupDeletedMdFiles();
   cleanupDeletedSkills();
   cleanupDeletedSkillFiles();
 
-  console.log(`[${timestamp()}] workspace sync complete (${mdFiles.length} .md files, ${skillCount} skill files)`);
+  console.log(`[${timestamp()}] workspace sync complete (${mdFiles.length} .md files, ${skillCount} skill files, ${scriptCount} script files)`);
 }
 
 function syncResources() {

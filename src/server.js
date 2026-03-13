@@ -130,6 +130,17 @@ function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+async function isGatewayAlive() {
+  const endpoints = ["/openclaw", "/", "/health"];
+  for (const endpoint of endpoints) {
+    try {
+      const res = await fetch(`${GATEWAY_TARGET}${endpoint}`, { method: "GET" });
+      if (res) return true;
+    } catch {}
+  }
+  return false;
+}
+
 async function waitForGatewayReady(opts = {}) {
   const timeoutMs = opts.timeoutMs ?? 60_000;
   const start = Date.now();
@@ -219,8 +230,15 @@ async function startGateway() {
     gatewayProc = null;
     if (!shuttingDown && isConfigured()) {
       console.log("[gateway] scheduling auto-restart in 2s...");
-      setTimeout(() => {
+      setTimeout(async () => {
         if (!shuttingDown && !gatewayProc && isConfigured()) {
+          // If the gateway is still responding (e.g. it daemonized and the tracked
+          // parent exited), skip the restart to avoid a crash loop.
+          const alive = await isGatewayAlive();
+          if (alive) {
+            console.log("[gateway] still responding after child exit — skipping restart");
+            return;
+          }
           ensureGatewayRunning().catch((err) => {
             console.error(`[gateway] auto-restart failed: ${err.message}`);
           });

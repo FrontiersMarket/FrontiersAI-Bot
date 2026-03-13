@@ -22,7 +22,14 @@ RUN apt-get update \
   && apt-get install -y --no-install-recommends google-cloud-cli \
   && rm -rf /var/lib/apt/lists/*
 
-RUN npm install -g openclaw@latest
+RUN npm install -g openclaw@2026.3.8
+
+# Pre-build python-dataviz venv with pinned kaleido 0.2.1.
+# kaleido 1.x requires Chromium which is NOT installed; 0.2.1 is self-contained.
+RUN python3 -m venv /opt/dataviz-venv \
+  && /opt/dataviz-venv/bin/pip install --quiet --no-cache-dir \
+       matplotlib seaborn plotly pandas numpy 'kaleido==0.2.1' \
+  && chmod -R a+rX /opt/dataviz-venv
 
 WORKDIR /app
 

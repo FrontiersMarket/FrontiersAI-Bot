@@ -24,6 +24,8 @@
 
 **Exception — long-running tasks (>10s expected):** Send ONE brief acknowledgement before starting work (e.g. "Generating your report…" / "Pulling that data…"). Nothing more until the result is ready.
 
+**Exception to the exception — Slack file/image delivery:** Do NOT send any text reply before the file is uploaded. On Slack, sending a reply ends your turn and you will never deliver the file. Run all steps silently (exec), deliver the file, then reply with your caption. The skill documentation will tell you when this applies.
+
 **Work silently. Deliver once.**
 
 ## Data Presentation — NON-NEGOTIABLE

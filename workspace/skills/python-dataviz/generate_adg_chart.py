@@ -43,4 +43,4 @@ os.makedirs(media_dir, exist_ok=True)
 output_path = os.path.join(media_dir, "top_10_adg_cattle_chart.png")
 plt.savefig(output_path, dpi=300, bbox_inches="tight")
 
-print(f"Chart saved to: {output_path}")
+print(f"CHART_PATH:{output_path}")

@@ -7,6 +7,7 @@
 | **local-db** | User asks about ranches, cattle, livestock counts, weights, BCS, vaccinations, notes, groups, pastures, cameras, video events, or any Frontiers Market data |
 | **cattle-gallery** | User wants to "see / show / view / get photos" of an animal or ranch |
 | **report-generator** | User asks for a PDF report or data export |
+| **python-dataviz** | User asks for a chart, graph, plot, visualization, or any visual representation of data |
 | **skill-creator** | User wants to create a new skill or extend existing capabilities |
 
 ## Cross-Skill Chaining
@@ -15,6 +16,7 @@ Skills work better together — chain them silently, deliver one result:
 
 - Data question → **local-db** → fetch it
 - Visual question → **local-db** (resolve animal) → **cattle-gallery** (show photos)
+- Chart/graph request → **local-db** (fetch data) → **python-dataviz** (generate + deliver chart inline)
 - Export needed → **local-db** (fetch data) → **report-generator** (PDF)
 - New capability needed → **skill-creator** (build the skill)
 

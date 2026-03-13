@@ -27,4 +27,12 @@ if [ -f /data/resources/openclaw-gbq-key.json ]; then
   fi
 fi
 
+# Ensure the openclaw CLI finds the correct state dir when run as the openclaw user
+# (e.g. via `docker exec ... su - openclaw -c "openclaw ..."`)
+OPENCLAW_PROFILE="/home/openclaw/.bashrc"
+OPENCLAW_STATE_LINE="export OPENCLAW_STATE_DIR=${OPENCLAW_STATE_DIR:-/data/.openclaw}"
+if ! grep -qF "OPENCLAW_STATE_DIR" "$OPENCLAW_PROFILE" 2>/dev/null; then
+  echo "$OPENCLAW_STATE_LINE" >> "$OPENCLAW_PROFILE"
+fi
+
 exec gosu openclaw node src/server.js
