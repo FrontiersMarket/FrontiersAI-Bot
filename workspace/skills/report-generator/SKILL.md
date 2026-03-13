@@ -67,19 +67,29 @@ Fill in the variables at the top, then run the whole block at once:
 # ── Variables — fill these in ──────────────────────────────────────────────
 FILE_PATH="/tmp/<filename>.pdf"
 FILE_NAME="<filename>.pdf"
-CHANNEL_ID="<CHANNEL_ID>"
+CHANNEL_ID="<channel_id or sender_id>"  # C..., D..., or U... (U... will be auto-resolved)
 COMMENT="<one-line summary>"
-THREAD_TS=""   # set to parent message ts if replying in a thread, else leave empty
+THREAD_TS="<ts_or_thread_ts>"  # ALWAYS set — use ts/thread_ts from Conversation info to reply in thread
 
 # ── Read Slack bot token from OpenClaw config ──────────────────────────────
-OPENCLAW_DIR="${OPENCLAW_STATE_DIR:-/home/openclaw/.openclaw}"
+OPENCLAW_DIR="${OPENCLAW_STATE_DIR:-/data/.openclaw}"
 SLACK_TOKEN=$(node -e "const c=require('$OPENCLAW_DIR/openclaw.json');process.stdout.write(c.channels.slack.botToken||'')")
+
+# ── Resolve user ID (U...) to DM channel ID (D...) ────────────────────────
+if [[ "$CHANNEL_ID" == U* ]]; then
+  DM=$(curl -s -X POST "https://slack.com/api/conversations.open" \
+    -H "Authorization: Bearer $SLACK_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d "{\"users\":\"$CHANNEL_ID\"}")
+  CHANNEL_ID=$(printf '%s' "$DM" | node -e "let b='';process.stdin.on('data',d=>b+=d);process.stdin.on('end',()=>process.stdout.write(JSON.parse(b).channel.id||''))")
+  echo "Resolved to DM channel: $CHANNEL_ID"
+fi
 
 # ── Step A: Get upload URL + file ID ──────────────────────────────────────
 STEP_A=$(curl -s -X POST "https://slack.com/api/files.getUploadURLExternal" \
   -H "Authorization: Bearer $SLACK_TOKEN" \
-  -F "filename=$FILE_NAME" \
-  -F "length=$(stat -c%s $FILE_PATH)")
+  --data-urlencode "filename=$FILE_NAME" \
+  --data-urlencode "length=$(stat -c%s $FILE_PATH)")
 UPLOAD_URL=$(printf '%s' "$STEP_A" | node -e "let b='';process.stdin.on('data',d=>b+=d);process.stdin.on('end',()=>process.stdout.write(JSON.parse(b).upload_url||''))")
 FILE_ID=$(printf '%s' "$STEP_A" | node -e "let b='';process.stdin.on('data',d=>b+=d);process.stdin.on('end',()=>process.stdout.write(JSON.parse(b).file_id||''))")
 echo "Step A — file_id: $FILE_ID"
@@ -134,12 +144,11 @@ Always apply `WHERE is_deleted = 0` on all entity and event tables (except `ranc
 
 ## Communication Rules
 
-**Message sequence — exactly 2 messages total:**
+**Slack** — do NOT send any message before the report is uploaded. Sending a message ends your turn on Slack. The `:eyes:` reaction is sent automatically. Work in silence: gather data → generate PDF → upload → then send ONE message with a short summary.
 
-1. **Before any work**: Send ONE brief acknowledgement (e.g. "Generating your report…")
-2. **After file upload**: The file arrives with a one-sentence summary
+**iMessage / other channels** — send ONE brief acknowledgement first (e.g. "Generating your report…"), then upload the file and reply with a short summary.
 
-That's it. Nothing in between. No progress updates. No "I'll now do X". No "I found N records". No narration of tool calls or intermediate steps. Work entirely in silence between message 1 and message 2.
+Nothing in between. No progress updates. No "I'll now do X". No "I found N records". No narration of tool calls or intermediate steps.
 
 **On error**: Report only the actionable issue in plain language. No stack traces, no file paths, no internal details.
 
