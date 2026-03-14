@@ -14,7 +14,8 @@
  *   7. Post-start     — health check + gcloud auth verification
  *   8. Sync cron      — create OpenClaw cron job for recurring BQ → SQLite syncs
  *   9. Pairing        — guide through /setup wizard + auto-approve devices
- *  10. DB sync        — wait for initial BigQuery → SQLite sync (gateway must be up)
+ *  10. iMessage       — configure iMessage channel (optional)
+ *  11. DB sync        — wait for initial BigQuery → SQLite sync (gateway must be up)
  */
 
 import { intro, outro, note } from "@clack/prompts";
@@ -28,6 +29,7 @@ import { configureBotScope } from "./steps/scope.mjs";
 import { runPairingFlow } from "./steps/pairing.mjs";
 import { waitForDbSync } from "./steps/db-sync-wait.mjs";
 import { setupSyncCron } from "./steps/setup-cron.mjs";
+import { configureImessage } from "./steps/imessage.mjs";
 
 async function main() {
   console.log("");
@@ -79,7 +81,12 @@ async function main() {
     );
   }
 
-  // Phase 10 — wait for initial BQ → SQLite sync (runs after pairing so gateway is up)
+  // Phase 10 — iMessage channel configuration
+  if (containerStarted) {
+    await configureImessage(vars);
+  }
+
+  // Phase 11 — wait for initial BQ → SQLite sync (runs after pairing so gateway is up)
   if (containerStarted) {
     await waitForDbSync(vars);
   }
