@@ -44,9 +44,10 @@ export async function removeContainer(name = CONTAINER_NAME) {
 /** Build docker run args from env vars. */
 export function buildDockerRunArgs(vars) {
   const port = vars.PORT ?? "8080";
+  const containerName = vars.CONTAINER_NAME || CONTAINER_NAME;
   const args = [
     "run", "-d",
-    "--name", CONTAINER_NAME,
+    "--name", containerName,
     "-p", `${port}:${port}`,
     "-e", `PORT=${port}`,
     "-e", `SETUP_PASSWORD=${vars.SETUP_PASSWORD ?? ""}`,

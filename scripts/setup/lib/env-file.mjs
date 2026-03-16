@@ -45,6 +45,9 @@ export function buildEnvContent(v) {
     "# Ranch UUID this bot is scoped to (set by pnpm setup:local → scope step)",
     `RANCH_UUID=${v.RANCH_UUID ?? ""}`,
     "",
+    "# Docker container name (allows running multiple bots on the same host)",
+    `CONTAINER_NAME=${v.CONTAINER_NAME ?? "frontiersai-bot"}`,
+    "",
   ].join("\n");
 }
 

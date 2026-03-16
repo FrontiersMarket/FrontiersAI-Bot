@@ -8,14 +8,15 @@
  *   1. Prerequisites  — node, pnpm, docker daemon
  *   2. Volume check   — detect & optionally wipe .tmpdata/ for a clean run
  *   3. Environment    — write .env with required vars
- *   4. GCP key        — enforce service-account key in resources/
- *   5. Bot scope      — ranch UUID (must run before container for RANCH_UUID env var)
- *   6. Container      — build image + start / restart / recreate
- *   7. Post-start     — health check + gcloud auth verification
- *   8. Sync cron      — create OpenClaw cron job for recurring BQ → SQLite syncs
- *   9. Pairing        — guide through /setup wizard + auto-approve devices
- *  10. iMessage       — configure iMessage channel (optional)
- *  11. DB sync        — wait for initial BigQuery → SQLite sync (gateway must be up)
+ *   4. Container name — container name + port conflict detection
+ *   5. GCP key        — enforce service-account key in resources/
+ *   6. Bot scope      — ranch UUID (must run before container for RANCH_UUID env var)
+ *   7. Container      — build image + start / restart / recreate
+ *   8. Post-start     — health check + gcloud auth verification
+ *   9. Sync cron      — create OpenClaw cron job for recurring BQ → SQLite syncs
+ *  10. Pairing        — guide through /setup wizard + auto-approve devices
+ *  11. iMessage       — configure iMessage channel (optional)
+ *  12. DB sync        — wait for initial BigQuery → SQLite sync (gateway must be up)
  */
 
 import { intro, outro, note } from "@clack/prompts";
@@ -30,6 +31,7 @@ import { runPairingFlow } from "./steps/pairing.mjs";
 import { waitForDbSync } from "./steps/db-sync-wait.mjs";
 import { setupSyncCron } from "./steps/setup-cron.mjs";
 import { configureImessage } from "./steps/imessage.mjs";
+import { configureContainerName } from "./steps/container-name.mjs";
 
 async function main() {
   console.log("");
@@ -44,27 +46,30 @@ async function main() {
   // Phase 3 — .env
   const vars = await configureEnv();
 
-  // Phase 4 — GCP service-account key (enforced)
+  // Phase 4 — container name + port conflict detection
+  await configureContainerName(vars);
+
+  // Phase 5 — GCP service-account key (enforced)
   await setupGcpKey(vars);
 
-  // Phase 5 — bot data scope (must run before container so RANCH_UUID is in env)
+  // Phase 6 — bot data scope (must run before container so RANCH_UUID is in env)
   const ranchUuid = await configureBotScope();
   if (ranchUuid) vars.RANCH_UUID = ranchUuid;
 
-  // Phase 6 — Docker image + container
+  // Phase 7 — Docker image + container
   const containerStarted = await manageContainer(vars);
 
-  // Phase 7 — health + gcloud
+  // Phase 8 — health + gcloud
   if (containerStarted) {
     await postStartCheck(vars);
   }
 
-  // Phase 8 — configure OpenClaw cron for recurring BQ → SQLite syncs
+  // Phase 9 — configure OpenClaw cron for recurring BQ → SQLite syncs
   if (containerStarted) {
     await setupSyncCron(vars);
   }
 
-  // Phase 9 — setup wizard + device pairing
+  // Phase 10 — setup wizard + device pairing
   if (containerStarted) {
     await runPairingFlow(vars);
   } else {
@@ -81,12 +86,12 @@ async function main() {
     );
   }
 
-  // Phase 10 — iMessage channel configuration
+  // Phase 11 — iMessage channel configuration
   if (containerStarted) {
     await configureImessage(vars);
   }
 
-  // Phase 11 — wait for initial BQ → SQLite sync (runs after pairing so gateway is up)
+  // Phase 12 — wait for initial BQ → SQLite sync (runs after pairing so gateway is up)
   if (containerStarted) {
     await waitForDbSync(vars);
   }
