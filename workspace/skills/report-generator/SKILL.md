@@ -115,6 +115,18 @@ echo "Step C — result: $RESULT"
 
 Check the `$RESULT` output: if `"ok":true` the file was sent. If `"ok":false`, read the `"error"` field and retry once before reporting the error to the user.
 
+**iMessage — send via send-attachment.sh:**
+
+```bash
+bash /data/workspace/scripts/send-attachment.sh \
+  --to "<sender_phone_number>" \
+  --file "/tmp/<filename>.pdf" \
+  --service imessage \
+  --text "<one-line summary>"
+```
+
+Set `--to` to the sender's phone number (e.g. `+15551234567`) from the conversation context.
+
 **Discord:**
 Use the `message send` OpenClaw tool (not a shell command):
 - `--channel discord -t <CHANNEL_ID> --media "/tmp/<filename>.pdf" --text "<one-line summary>"`

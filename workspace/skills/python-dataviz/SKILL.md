@@ -113,8 +113,7 @@ if SERVICE == "slack":
 
 elif SERVICE == "imessage":
     import subprocess
-    state_dir = os.environ.get("OPENCLAW_STATE_DIR", "/data/.openclaw")
-    subprocess.run(["bash", f"{state_dir}/scripts/imsg-ssh", "send",
+    subprocess.run(["bash", "/data/workspace/scripts/send-attachment.sh",
         "--to", SENDER_ID, "--file", output_path, "--service", "imessage"], check=True)
     print(f"Delivered to iMessage {SENDER_ID}")
 PYEOF

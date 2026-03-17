@@ -155,11 +155,21 @@ PYEOF
 # iMessage
 # ---------------------------------------------------------------------------
 send_imessage() {
-  local state_dir="${OPENCLAW_STATE_DIR:-/data/.openclaw}"
-  local imsg_script="$state_dir/scripts/imsg-ssh"
+  # imsg-ssh lives at /data/scripts/imsg-ssh (created by pnpm setup:local imessage step).
+  # Also check openclaw.json cliPath as fallback.
+  local imsg_script="/data/scripts/imsg-ssh"
 
   if [[ ! -f "$imsg_script" ]]; then
-    echo "Error: imsg-ssh script not found at $imsg_script" >&2
+    # Fallback: read cliPath from openclaw.json
+    local state_dir="${OPENCLAW_STATE_DIR:-/data/.openclaw}"
+    local config_file="$state_dir/openclaw.json"
+    if [[ -f "$config_file" ]] && command -v python3 &>/dev/null; then
+      imsg_script=$(python3 -c "import json; print(json.load(open('$config_file')).get('channels',{}).get('imessage',{}).get('cliPath',''))" 2>/dev/null || true)
+    fi
+  fi
+
+  if [[ -z "$imsg_script" || ! -f "$imsg_script" ]]; then
+    echo "Error: imsg-ssh script not found. Run iMessage setup first (pnpm setup:local)." >&2
     exit 1
   fi
 
