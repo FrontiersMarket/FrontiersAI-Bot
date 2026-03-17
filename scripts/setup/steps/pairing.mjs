@@ -141,6 +141,23 @@ export async function postSetupWork(vars) {
     }
   }
 
+  // ── Fix .tmpdata/ permissions for host-side writes ────────────────────────
+  // The container entrypoint runs `chown -R openclaw:openclaw /data`, which
+  // changes the bind-mounted .tmpdata/ to the container's openclaw UID.
+  // On Linux VMs, this UID may differ from the host user, blocking host writes.
+  // Make /data group/other-writable so the host user can sync workspace files.
+  {
+    try {
+      await execFileAsync(
+        "docker",
+        ["exec", CONTAINER_NAME, "chmod", "-R", "a+rwX", "/data"],
+        { timeout: 15_000 }
+      );
+    } catch {
+      // Non-fatal — may already be fine (e.g. macOS where Docker Desktop handles UID mapping)
+    }
+  }
+
   // ── Sync workspace → .tmpdata (container volume) ──────────────────────────
   {
     const s = spinner();

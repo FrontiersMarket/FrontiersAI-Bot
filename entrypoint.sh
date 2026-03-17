@@ -7,8 +7,10 @@ chmod 755 /data
 # Best-effort recursive chown — git objects in .linuxbrew and workspace
 # have restrictive permissions that cause chown to fail on container restart.
 chown -R openclaw:openclaw /data 2>/dev/null || true
-# Ensure subdirectories are also accessible from the host (for workspace sync, etc.)
-chmod -R u+rwX,go+rX,go+w /data 2>/dev/null || true
+# Ensure the volume is fully accessible from the host (for workspace sync, etc.).
+# On Linux, the bind-mounted .tmpdata/ must be writable by the host user whose UID
+# may differ from the container's openclaw user.
+chmod -R a+rwX /data 2>/dev/null || true
 
 if [ ! -d /data/.linuxbrew ]; then
   cp -a /home/linuxbrew/.linuxbrew /data/.linuxbrew
