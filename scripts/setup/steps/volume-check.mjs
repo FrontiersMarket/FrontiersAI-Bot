@@ -64,6 +64,8 @@ export async function checkVolume() {
   }
 
   // Wipe and recreate .tmpdata
+  // Docker creates files as root inside the volume, so Node's rmSync often
+  // fails with EACCES. Fall back to `sudo rm -rf` automatically.
   {
     const s = spinner();
     s.start("Clearing .tmpdata/…");
@@ -71,10 +73,17 @@ export async function checkVolume() {
       rmSync(TMPDATA, { recursive: true, force: true });
       mkdirSync(TMPDATA, { recursive: true });
       s.stop(".tmpdata/ cleared ✓");
-    } catch (err) {
-      s.stop("Failed to clear .tmpdata/");
-      log.warn(`  ${err.message}`);
-      log.warn("  Try manually: rm -rf .tmpdata && mkdir .tmpdata");
+    } catch {
+      // Permission denied — retry with sudo
+      try {
+        await execFileAsync("sudo", ["rm", "-rf", TMPDATA], { timeout: 15_000 });
+        mkdirSync(TMPDATA, { recursive: true });
+        s.stop(".tmpdata/ cleared (via sudo) ✓");
+      } catch (err) {
+        s.stop("Failed to clear .tmpdata/");
+        log.warn(`  ${err.message}`);
+        log.warn("  Try manually: sudo rm -rf .tmpdata && mkdir .tmpdata");
+      }
     }
   }
 }

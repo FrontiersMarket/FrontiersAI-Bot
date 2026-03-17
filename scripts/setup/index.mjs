@@ -17,8 +17,8 @@
  *   6. Bot scope      — ranch UUID (must run before container for RANCH_UUID env var)
  *   7. Container      — build image + start / restart / recreate
  *   8. Post-start     — health check + gcloud auth verification
- *   9. Sync cron      — create OpenClaw cron job for recurring BQ → SQLite syncs
- *  10. Onboarding     — browser wizard (dev) or CLI prompts (non-interactive)
+ *   9. Onboarding     — browser wizard (dev) or CLI prompts (non-interactive)
+ *  10. Sync cron      — create OpenClaw cron job for recurring BQ → SQLite syncs (gateway must be up)
  *  11. iMessage       — configure iMessage channel (optional, skipped if declined)
  *  12. DB sync        — wait for initial BigQuery → SQLite sync (gateway must be up)
  */
@@ -91,12 +91,7 @@ async function main() {
     await postStartCheck(vars);
   }
 
-  // Phase 9 — configure OpenClaw cron for recurring BQ → SQLite syncs
-  if (containerStarted) {
-    await setupSyncCron(vars);
-  }
-
-  // Phase 10 — onboarding (mode-dependent)
+  // Phase 9 — onboarding (mode-dependent, starts the gateway)
   if (containerStarted) {
     if (mode === "development") {
       // Browser wizard + device pairing (original flow)
@@ -118,6 +113,12 @@ async function main() {
       ].join("\n"),
       "Container not running"
     );
+  }
+
+  // Phase 10 — configure OpenClaw cron for recurring BQ → SQLite syncs
+  // (must run after onboarding so the gateway is up and accepting commands)
+  if (containerStarted) {
+    await setupSyncCron(vars);
   }
 
   // Phase 11 — iMessage channel configuration (optional — user can decline)

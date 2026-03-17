@@ -7,7 +7,53 @@ import {
 } from "../lib/docker.mjs";
 import { spawnInherited, bail, guardCancel } from "../lib/utils.mjs";
 import { execFileAsync } from "../lib/utils.mjs";
-import { CONTAINER_NAME } from "../lib/constants.mjs";
+import { CONTAINER_NAME, ROOT } from "../lib/constants.mjs";
+import { resolve } from "node:path";
+import { existsSync, mkdirSync, statSync } from "node:fs";
+
+const TMPDATA = resolve(ROOT, ".tmpdata");
+
+/**
+ * Ensure .tmpdata/ exists and is owned by the current user BEFORE Docker
+ * starts — if Docker creates it via bind-mount, it'll be root-owned on Linux.
+ */
+function ensureTmpdataDir() {
+  if (!existsSync(TMPDATA)) {
+    mkdirSync(TMPDATA, { recursive: true });
+  }
+}
+
+/**
+ * Reclaim ownership of .tmpdata/ after Docker may have created root-owned
+ * files inside the bind-mount volume. No-op if already owned by current user.
+ * Uses a throwaway Docker container to chown — no sudo required on the host.
+ */
+async function reclaimTmpdata() {
+  try {
+    const st = statSync(TMPDATA);
+    if (st.uid === process.getuid()) return; // already ours
+  } catch {
+    return;
+  }
+  const uid = process.getuid();
+  const gid = process.getgid();
+  try {
+    // Use a lightweight container to fix host-side permissions (avoids needing sudo)
+    await execFileAsync(
+      "docker",
+      ["run", "--rm", "-v", `${TMPDATA}:/vol`, "alpine", "chown", "-R", `${uid}:${gid}`, "/vol"],
+      { timeout: 60_000 }
+    );
+  } catch {
+    // Fallback to sudo if Docker approach fails
+    try {
+      await execFileAsync("sudo", ["chown", "-R", `${uid}:${gid}`, TMPDATA], { timeout: 30_000 });
+    } catch {
+      // Best-effort — warn but continue
+      log.warn(`  Could not fix .tmpdata/ ownership. Run: sudo chown -R $(id -u):$(id -g) ${TMPDATA}`);
+    }
+  }
+}
 
 export async function manageContainer(vars) {
   const s = spinner();
@@ -94,6 +140,9 @@ export async function manageContainer(vars) {
     }
   }
 
+  // ── Ensure .tmpdata/ exists before Docker touches it ─────────────────────
+  ensureTmpdataDir();
+
   // ── Execute container action ─────────────────────────────────────────────
   if (containerAction === "none" || containerAction === "keep") {
     if (containerAction === "keep") log.info("Container left running");
@@ -110,6 +159,7 @@ export async function manageContainer(vars) {
       s2.stop("Failed to start container");
       bail(`docker start failed: ${err.message}`);
     }
+    await reclaimTmpdata();
     return true;
   }
 
@@ -123,6 +173,7 @@ export async function manageContainer(vars) {
       s2.stop("Failed to restart container");
       bail(`docker restart failed: ${err.message}`);
     }
+    await reclaimTmpdata();
     return true;
   }
 
@@ -144,6 +195,7 @@ export async function manageContainer(vars) {
     } catch {
       bail("docker run failed — see output above for details");
     }
+    await reclaimTmpdata();
     return true;
   }
 
