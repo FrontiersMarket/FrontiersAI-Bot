@@ -33,7 +33,7 @@ sync_files() {
 
   # Sync top-level .md files
   for f in "$SRC"/*.md; do
-    [ -f "$f" ] && cp -p "$f" "$DEST/"
+    [ -f "$f" ] && cp "$f" "$DEST/"
   done
 
   # Sync skills/ directory (excluding dependency artifacts)
@@ -43,7 +43,7 @@ sync_files() {
     (cd "$SRC/skills" && find . -type f | grep -Ev "/($EXCLUDED_DIRS)/" | while IFS= read -r file; do
       dir="$(dirname "$file")"
       mkdir -p "$DEST/skills/$dir"
-      cp -p "$file" "$DEST/skills/$file"
+      cp "$file" "$DEST/skills/$file"
     done)
     echo "[sync] Skills synced at $(date +%H:%M:%S)"
   fi
@@ -51,7 +51,7 @@ sync_files() {
   # Sync resources/ directory (all files)
   if [ -d "$RESOURCES_SRC" ]; then
     mkdir -p "$RESOURCES_DEST"
-    cp -rp "$RESOURCES_SRC"/. "$RESOURCES_DEST/"
+    cp -r "$RESOURCES_SRC"/. "$RESOURCES_DEST/"
     echo "[sync] Resources synced at $(date +%H:%M:%S)"
   fi
 
