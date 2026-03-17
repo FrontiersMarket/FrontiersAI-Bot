@@ -108,6 +108,12 @@ export async function postSetupWork(vars) {
         ["exec", CONTAINER_NAME, "chmod", "-R", "a+rwX", "/data"],
         { timeout: 15_000 }
       );
+      // Restore SSH key permissions — SSH refuses keys more open than 0600
+      await execFileAsync(
+        "docker",
+        ["exec", CONTAINER_NAME, "chmod", "600", "/data/.ssh/id_ed25519"],
+        { timeout: 5_000 }
+      ).catch(() => {});
     } catch {
       // Non-fatal — may already be fine (e.g. macOS where Docker Desktop handles UID mapping)
     }

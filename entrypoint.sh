@@ -11,6 +11,8 @@ chown -R openclaw:openclaw /data 2>/dev/null || true
 # On Linux, the bind-mounted .tmpdata/ must be writable by the host user whose UID
 # may differ from the container's openclaw user.
 chmod -R a+rwX /data 2>/dev/null || true
+# Restore SSH key permissions — SSH refuses keys with perms more open than 0600
+chmod 600 /data/.ssh/id_ed25519 2>/dev/null || true
 
 if [ ! -d /data/.linuxbrew ]; then
   cp -a /home/linuxbrew/.linuxbrew /data/.linuxbrew

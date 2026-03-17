@@ -54,8 +54,12 @@ function timestamp() {
 
 function syncFile(src, dest, relPath) {
   try {
+    const destPath = join(dest, relPath);
     mkdirSync(join(dest, dirname(relPath)), { recursive: true });
-    copyFileSync(join(src, relPath), join(dest, relPath));
+    // On Linux, copyFileSync fails with EPERM when overwriting a file owned by
+    // a different UID (e.g. container's openclaw user). Remove first to avoid this.
+    try { rmSync(destPath); } catch {}
+    copyFileSync(join(src, relPath), destPath);
     console.log(`[${timestamp()}] synced ${relPath}`);
   } catch (err) {
     console.error(`[${timestamp()}] failed to sync ${relPath}: ${err.message}`);
