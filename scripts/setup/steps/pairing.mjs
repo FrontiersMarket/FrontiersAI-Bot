@@ -96,6 +96,23 @@ export async function postSetupWork(vars) {
   const port = vars.PORT ?? "8080";
   const controlUrl = `http://localhost:${port}/openclaw`;
 
+  // ── Fix .tmpdata/ permissions for host-side writes ────────────────────────
+  // The container entrypoint runs `chown -R openclaw:openclaw /data`, which
+  // changes the bind-mounted .tmpdata/ to the container's openclaw UID.
+  // On Linux VMs, this UID may differ from the host user, blocking host writes.
+  // Must run BEFORE any host-side reads/writes to .tmpdata/.
+  {
+    try {
+      await execFileAsync(
+        "docker",
+        ["exec", CONTAINER_NAME, "chmod", "-R", "a+rwX", "/data"],
+        { timeout: 15_000 }
+      );
+    } catch {
+      // Non-fatal — may already be fine (e.g. macOS where Docker Desktop handles UID mapping)
+    }
+  }
+
   // ── Patch allowedOrigins + tools.allow ────────────────────────────────────
   {
     const s = spinner();
@@ -138,23 +155,6 @@ export async function postSetupWork(vars) {
         log.warn(`  ${err.message}`);
         log.warn("  You may need to set it manually: docker exec " + CONTAINER_NAME + " openclaw config set gateway.http.endpoints.chatCompletions.enabled true");
       }
-    }
-  }
-
-  // ── Fix .tmpdata/ permissions for host-side writes ────────────────────────
-  // The container entrypoint runs `chown -R openclaw:openclaw /data`, which
-  // changes the bind-mounted .tmpdata/ to the container's openclaw UID.
-  // On Linux VMs, this UID may differ from the host user, blocking host writes.
-  // Make /data group/other-writable so the host user can sync workspace files.
-  {
-    try {
-      await execFileAsync(
-        "docker",
-        ["exec", CONTAINER_NAME, "chmod", "-R", "a+rwX", "/data"],
-        { timeout: 15_000 }
-      );
-    } catch {
-      // Non-fatal — may already be fine (e.g. macOS where Docker Desktop handles UID mapping)
     }
   }
 
