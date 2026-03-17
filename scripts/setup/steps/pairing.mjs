@@ -86,39 +86,17 @@ function patchOpenclaw(port, enableChatCompletions = false) {
   return true;
 }
 
-export async function runPairingFlow(vars) {
+/**
+ * Shared post-setup work: patch config, sync workspace, GCP auth,
+ * clear sessions, restart container, wait for gateway.
+ *
+ * Used by both the browser (development) and CLI (non-interactive) flows.
+ */
+export async function postSetupWork(vars) {
   const port = vars.PORT ?? "8080";
-  const setupUrl = `http://localhost:${port}/setup`;
   const controlUrl = `http://localhost:${port}/openclaw`;
 
-  // ── Step 1: complete the setup wizard ─────────────────────────────────────
-  note(
-    [
-      "  Open the setup wizard and complete the onboarding flow.",
-      "",
-      `  URL:       ${setupUrl}`,
-      `  Password:  ${vars.SETUP_PASSWORD}`,
-      "",
-      "  Suggested settings:",
-      "    Model:    google/gemini-2.5-flash",
-      "    Channels: skip for now (you can add them later)",
-      "",
-      "  When the wizard finishes it will show a success screen with a",
-      '  "Open OpenClaw UI" button at the top right — stop there.',
-    ].join("\n"),
-    "Step 1 — Complete setup wizard"
-  );
-
-  guardCancel(
-    await confirm({
-      message: "Setup wizard finished? (/setup process complete)",
-      initialValue: false,
-    })
-  );
-
   // ── Patch allowedOrigins + tools.allow ────────────────────────────────────
-  // Do this immediately after setup so the Control UI URL is whitelisted
-  // before the user tries to open it.
   {
     const s = spinner();
     s.start("Patching openclaw.json (allowedOrigins + tools.allow)…");
@@ -142,7 +120,6 @@ export async function runPairingFlow(vars) {
   }
 
   // ── Configure chat completions via CLI (fallback/ensure) ────────────────
-  // Use CLI to ensure the setting is applied even if file patch didn't work
   {
     const enableChatCompletions = vars.ENABLE_CHAT_COMPLETIONS === "true";
     if (enableChatCompletions) {
@@ -164,27 +141,7 @@ export async function runPairingFlow(vars) {
     }
   }
 
-  // ── Step 2: open the Control UI → triggers pairing request ────────────────
-  note(
-    [
-      `  Open the Control UI now:  ${controlUrl}`,
-      "",
-      '  You will likely see a "pairing required" screen — that is expected.',
-      "  Come back here and confirm; we will approve the pairing next.",
-    ].join("\n"),
-    "Step 2 — Open Control UI"
-  );
-
-  guardCancel(
-    await confirm({
-      message: 'Have you opened the Control UI (even if it shows "pairing required")?',
-      initialValue: false,
-    })
-  );
-
   // ── Sync workspace → .tmpdata (container volume) ──────────────────────────
-  // Copies workspace/*.md + skills/ from repo root to .tmpdata/workspace/ and
-  // also removes BOOTSTRAP.md from the volume (the script handles this).
   {
     const s = spinner();
     s.start("Syncing workspace files to container volume…");
@@ -203,16 +160,11 @@ export async function runPairingFlow(vars) {
   }
 
   // ── Re-inject scope into dest AGENTS.md after sync ────────────────────────
-  // sync-workspace.sh copies the clean source AGENTS.md (no scope values) to
-  // .tmpdata/workspace/AGENTS.md, overwriting the scope injection from the
-  // scope step. Re-inject here so the container sees the correct scope.
   try {
     reInjectScope();
   } catch {}
 
   // ── Remove BOOTSTRAP.md from container's live filesystem ──────────────────
-  // The sync script cleans .tmpdata but the container may still have a stale
-  // copy at /data/workspace/BOOTSTRAP.md — remove it via docker exec.
   {
     const s = spinner();
     s.start("Removing BOOTSTRAP.md from container workspace…");
@@ -235,7 +187,6 @@ export async function runPairingFlow(vars) {
 
     const keyPathInContainer = `/data/resources/${GCP_KEY_FILE}`;
 
-    // Read project_id from the local key file so we don't hardcode it
     let projectId = "frontiersmarketplace";
     try {
       const keyData = JSON.parse(
@@ -270,7 +221,134 @@ export async function runPairingFlow(vars) {
     }
   }
 
-  // ── Step 3: auto-approve pending pairing requests ─────────────────────────
+  // ── Clear agent sessions + reset via CLI ──────────────────────────────────
+  {
+    const s = spinner();
+    s.start("Clearing agent sessions…");
+    const sessionsDir = resolve(ROOT, ".tmpdata", ".openclaw", "agents", "main", "sessions");
+    try {
+      if (existsSync(sessionsDir)) {
+        rmSync(sessionsDir, { recursive: true, force: true });
+      }
+      s.stop("Agent sessions cleared ✓");
+    } catch (err) {
+      s.stop("Could not clear agent sessions");
+      log.warn(`  ${err.message}`);
+    }
+  }
+
+  {
+    const s = spinner();
+    s.start("Resetting OpenClaw session…");
+    try {
+      await execOpenclaw(["session", "reset"], 15_000);
+      s.stop("OpenClaw session reset ✓");
+    } catch {
+      s.stop("Session reset skipped (command not available or no active session)");
+    }
+  }
+
+  {
+    const s = spinner();
+    s.start("Restarting container to apply config changes…");
+    try {
+      await execFileAsync("docker", ["restart", CONTAINER_NAME], { timeout: 30_000 });
+      s.stop("Container restarted ✓");
+    } catch (err) {
+      s.stop("Container restart failed");
+      log.warn(`  ${err.message}`);
+      log.warn(`  Run manually: docker restart ${CONTAINER_NAME}`);
+    }
+  }
+
+  // ── Wait for gateway ──────────────────────────────────────────────────────
+  {
+    const healthUrl = `http://localhost:${port}/setup/healthz`;
+    const s = spinner();
+    s.start("Waiting for gateway to come back up…");
+    const healthy = await pollHealth(healthUrl, 60_000);
+    if (healthy) {
+      s.stop("Gateway is ready ✓");
+    } else {
+      s.stop("Gateway health check timed out — it may still be starting up");
+      log.warn(`  Monitor with: docker logs -f ${CONTAINER_NAME}`);
+    }
+  }
+
+  // ── Done tip ──────────────────────────────────────────────────────────────
+  note(
+    [
+      "  A fresh session is ready. Open the Control UI to start:",
+      "",
+      `    ${controlUrl}`,
+      "",
+      "  To keep the bot in sync and tail logs while you work:",
+      "",
+      "    pnpm watch",
+      "",
+      "  This will:",
+      "    • Stream container logs in real time",
+      "    • Auto-sync workspace/ changes → container on every save",
+    ].join("\n"),
+    "All done — fresh session ready"
+  );
+}
+
+/**
+ * Development flow — directs user to browser wizard, then auto-approves devices.
+ */
+export async function runPairingFlow(vars) {
+  const port = vars.PORT ?? "8080";
+  const setupUrl = `http://localhost:${port}/setup`;
+  const controlUrl = `http://localhost:${port}/openclaw`;
+
+  // ── Step 1: complete the setup wizard ─────────────────────────────────────
+  note(
+    [
+      "  Open the setup wizard and complete the onboarding flow.",
+      "",
+      `  URL:       ${setupUrl}`,
+      `  Password:  ${vars.SETUP_PASSWORD}`,
+      "",
+      "  Suggested settings:",
+      "    Model:    google/gemini-2.5-flash",
+      "    Channels: skip for now (you can add them later)",
+      "",
+      "  When the wizard finishes it will show a success screen with a",
+      '  "Open OpenClaw UI" button at the top right — stop there.',
+    ].join("\n"),
+    "Step 1 — Complete setup wizard"
+  );
+
+  guardCancel(
+    await confirm({
+      message: "Setup wizard finished? (/setup process complete)",
+      initialValue: false,
+    })
+  );
+
+  // ── Shared post-setup work (patch, sync, auth, sessions, restart) ─────────
+  await postSetupWork(vars);
+
+  // ── Step 2: open the Control UI → triggers pairing request ────────────────
+  note(
+    [
+      `  Open the Control UI now:  ${controlUrl}`,
+      "",
+      '  You will likely see a "pairing required" screen — that is expected.',
+      "  Come back here and confirm; we will approve the pairing next.",
+    ].join("\n"),
+    "Device pairing — Open Control UI"
+  );
+
+  guardCancel(
+    await confirm({
+      message: 'Have you opened the Control UI (even if it shows "pairing required")?',
+      initialValue: false,
+    })
+  );
+
+  // ── Auto-approve pending pairing requests ─────────────────────────────────
   const s = spinner();
   s.start("Polling for pending device pairing requests…");
 
@@ -318,7 +396,6 @@ export async function runPairingFlow(vars) {
     }
   }
 
-  // ── Step 4: refresh ────────────────────────────────────────────────────────
   if (approved > 0) {
     note(
       [
@@ -330,79 +407,7 @@ export async function runPairingFlow(vars) {
         "  The Control UI should now load fully.",
         "  Send a test message in your connected channel to verify.",
       ].join("\n"),
-      "Step 3 — Refresh and test ✓"
+      "Devices approved ✓"
     );
   }
-
-  // ── Clear agent sessions + reset via CLI ──────────────────────────────────
-  {
-    const s = spinner();
-    s.start("Clearing agent sessions…");
-    const sessionsDir = resolve(ROOT, ".tmpdata", ".openclaw", "agents", "main", "sessions");
-    try {
-      if (existsSync(sessionsDir)) {
-        rmSync(sessionsDir, { recursive: true, force: true });
-      }
-      s.stop("Agent sessions cleared ✓");
-    } catch (err) {
-      s.stop("Could not clear agent sessions");
-      log.warn(`  ${err.message}`);
-    }
-  }
-
-  {
-    const s = spinner();
-    s.start("Resetting OpenClaw session…");
-    try {
-      await execOpenclaw(["session", "reset"], 15_000);
-      s.stop("OpenClaw session reset ✓");
-    } catch {
-      s.stop("Session reset skipped (command not available or no active session)");
-    }
-  }
-
-  {
-    const s = spinner();
-    s.start("Restarting container to apply config changes…");
-    try {
-      await execFileAsync("docker", ["restart", CONTAINER_NAME], { timeout: 30_000 });
-      s.stop("Container restarted ✓");
-    } catch (err) {
-      s.stop("Container restart failed");
-      log.warn(`  ${err.message}`);
-      log.warn(`  Run manually: docker restart ${CONTAINER_NAME}`);
-    }
-  }
-
-  // ── Wait for gateway + open fresh session ──────────────────────────────────
-  {
-    const healthUrl = `http://localhost:${port}/setup/healthz`;
-    const s = spinner();
-    s.start("Waiting for gateway to come back up…");
-    const healthy = await pollHealth(healthUrl, 60_000);
-    if (healthy) {
-      s.stop("Gateway is ready ✓");
-    } else {
-      s.stop("Gateway health check timed out — it may still be starting up");
-      log.warn(`  Monitor with: docker logs -f ${CONTAINER_NAME}`);
-    }
-  }
-
-  // ── Step 5: fresh session + watcher tip ───────────────────────────────────
-  note(
-    [
-      "  A fresh session is ready. Open the Control UI to start:",
-      "",
-      `    ${controlUrl}`,
-      "",
-      "  To keep the bot in sync and tail logs while you work:",
-      "",
-      "    pnpm watch",
-      "",
-      "  This will:",
-      "    • Stream container logs in real time",
-      "    • Auto-sync workspace/ changes → container on every save",
-    ].join("\n"),
-    "All done — fresh session ready"
-  );
 }
