@@ -8,6 +8,7 @@
 | **cattle-gallery** | User wants to "see / show / view / get photos" of an animal or ranch |
 | **report-generator** | User asks for a PDF report or data export |
 | **python-dataviz** | User asks for a chart, graph, plot, visualization, or any visual representation of data |
+| **shorten** | Need to shorten a URL (e.g. long video URLs before sharing with the user) |
 | **skill-creator** | User wants to create a new skill or extend existing capabilities |
 
 ## Cross-Skill Chaining
@@ -18,6 +19,7 @@ Skills work better together — chain them silently, deliver one result:
 - Visual question → **local-db** (resolve animal) → **cattle-gallery** (show photos)
 - Chart/graph request → **local-db** (fetch data) → **python-dataviz** (generate + deliver chart inline)
 - Export needed → **local-db** (fetch data) → **report-generator** (PDF)
+- Video request → **local-db** (get video events + camera video URLs) → **shorten** (shorten each URL) → deliver short links
 - New capability needed → **skill-creator** (build the skill)
 
 ## Data Source

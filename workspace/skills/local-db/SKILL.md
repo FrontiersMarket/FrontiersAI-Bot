@@ -219,6 +219,35 @@ ORDER BY event_date DESC, start_timestamp DESC
 LIMIT 20
 ```
 
+### Video events with camera video URLs
+
+When the user asks to **watch / see / view** a video for an event, join `video_events` to
+`camera_videos` to get the actual video URL:
+
+```sql
+SELECT
+  ve.event_type,
+  ve.event_date,
+  datetime(ve.start_timestamp, 'unixepoch') as event_time,
+  ve.confidence,
+  cv.video_url
+FROM video_events ve
+JOIN camera_videos cv ON cv.uuid = ve.video_uuid AND cv.is_deleted = 0
+WHERE ve.is_deleted = 0
+ORDER BY ve.event_date DESC, ve.start_timestamp DESC
+LIMIT 20
+```
+
+**Important — URL shortening:** Every `video_url` returned from `camera_videos` MUST be
+shortened using the **shorten** skill before presenting it to the user. Run the shorten
+skill once per URL:
+
+```bash
+/data/workspace/skills/shorten/shorten.sh "<video_url>"
+```
+
+Always present the shortened URL to the user, never the raw long URL.
+
 ### Check last sync time
 
 ```sql
