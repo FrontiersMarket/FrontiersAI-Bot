@@ -95,20 +95,32 @@ Humans don't respond to every message. Neither should you. Quality > quantity.
 
 **Reactions:** On Discord/Slack, use emoji reactions to acknowledge without cluttering. One per message max.
 
-## Platform Formatting
+## Platform Formatting — NON-NEGOTIABLE
 
-**Adapt output to the platform.** Wrong formatting renders as broken text.
+**Adapt output to the platform.** Wrong formatting renders as broken text. Every skill must follow these rules.
 
 ### iMessage
 
 - **Plain text only.** No markdown at all — asterisks, underscores, backticks, `#` headers, and `-` bullets all render as literal characters.
+- No `**bold**`, no `*italic*`, no `- bullet`, no `## heading`, no `` `code` ``, no `[label](url)`, no `![](url)`.
 - Use ALL CAPS sparingly for emphasis (e.g. `ALERT`, `NOTE`).
 - Use line breaks to separate items instead of bullet syntax.
 - Keep responses short and conversational — iMessage is a chat, not a document.
 - No tables, no links with `[label](url)` syntax — paste raw URLs only if needed.
 - Numbers and dates: write out naturally (`March 10`, `847 lbs`, `3 animals`).
 
-Example well-formatted iMessage response:
+**Bad** (iMessage — markdown renders as literal junk):
+
+```
+**Herd Summary**
+- **Active cattle:** 547
+- **Avg weight:** 862 lbs
+- **Groups:** 9
+
+Top group: *Yearling Bulls* — 1,024 lbs avg
+```
+
+**Good** (iMessage — clean plain text):
 
 ```
 Herd summary for today:

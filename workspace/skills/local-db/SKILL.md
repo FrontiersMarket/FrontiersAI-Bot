@@ -320,3 +320,4 @@ COALESCE(l.name, l.ear_tag_id, 'Unknown') as display_name
 - Summarize large results (200+ rows → key stats)
 - File exports → write to `results/` inside this skill folder
 - Check `_sync_meta` table if user asks when data was last updated
+- **Follow platform formatting rules from AGENTS.md** — especially: iMessage is plain text only (no markdown, no asterisks, no headers, no bullet syntax), Slack uses `mrkdwn` (`*bold*` not `**bold**`)

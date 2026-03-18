@@ -158,7 +158,7 @@ Always apply `WHERE is_deleted = 0` on all entity and event tables (except `ranc
 
 **Slack** — do NOT send any message before the report is uploaded. Sending a message ends your turn on Slack. The `:eyes:` reaction is sent automatically. Work in silence: gather data → generate PDF → upload → then send ONE message with a short summary.
 
-**iMessage / other channels** — send ONE brief acknowledgement first (e.g. "Generating your report…"), then upload the file and reply with a short summary.
+**iMessage / other channels** — send ONE brief acknowledgement first (e.g. "Generating your report…"), then upload the file and reply with a short summary. On iMessage, use plain text only — no markdown, no asterisks, no headers, no bullet syntax.
 
 Nothing in between. No progress updates. No "I'll now do X". No "I found N records". No narration of tool calls or intermediate steps.
 

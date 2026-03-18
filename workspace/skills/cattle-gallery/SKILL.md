@@ -96,6 +96,25 @@ https://storage.googleapis.com/.../image2.jpg
 https://storage.googleapis.com/.../image3.jpg
 ```
 
+### iMessage
+
+Plain text only — no markdown at all. No `![](url)`, no `#` headers, no `_italic_`, no asterisks.
+
+Respond with:
+
+1. A short intro line
+2. Each image URL on its own line, as a plain URL with no formatting
+
+**iMessage example output:**
+
+```
+Photos for Tag #1042 (Bella):
+
+https://storage.googleapis.com/.../image1.jpg
+https://storage.googleapis.com/.../image2.jpg
+https://storage.googleapis.com/.../image3.jpg
+```
+
 ### Other Platforms (Discord, web, etc.)
 
 Present the images using standard Markdown image syntax so they render inline.
