@@ -1033,6 +1033,75 @@ app.post("/internal/sync-now", (req, res) => {
   return res.json({ ok: true, message: "Sync started" });
 });
 
+// ── Session API (called by webapp, authenticated via gateway token) ──────────
+
+function requireGatewayToken(req, res, next) {
+  const header = req.headers.authorization || "";
+  const token = header.startsWith("Bearer ") ? header.slice(7) : "";
+  if (!token || token !== OPENCLAW_GATEWAY_TOKEN) {
+    return res.status(401).json({ ok: false, error: "Unauthorized" });
+  }
+  next();
+}
+
+app.get("/api/sessions", requireGatewayToken, async (_req, res) => {
+  try {
+    const result = await runCmd(OPENCLAW_NODE, clawArgs(["sessions", "--json"]));
+    let data;
+    try {
+      data = JSON.parse(result.output);
+    } catch {
+      return res.status(500).json({ ok: false, error: "Failed to parse sessions output", raw: result.output });
+    }
+    return res.json({ ok: true, data });
+  } catch (err) {
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+app.get("/api/sessions/:sessionId/history", requireGatewayToken, async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    if (!/^[a-zA-Z0-9_\-.]+$/.test(sessionId)) {
+      return res.status(400).json({ ok: false, error: "Invalid session ID" });
+    }
+
+    const agentsDir = path.join(STATE_DIR, "agents");
+    if (!fs.existsSync(agentsDir)) {
+      return res.status(404).json({ ok: false, error: "No sessions found" });
+    }
+
+    let jsonlPath = null;
+    for (const agentId of fs.readdirSync(agentsDir)) {
+      const candidate = path.join(agentsDir, agentId, "sessions", `${sessionId}.jsonl`);
+      if (fs.existsSync(candidate)) {
+        jsonlPath = candidate;
+        break;
+      }
+    }
+
+    if (!jsonlPath) {
+      return res.status(404).json({ ok: false, error: "Session not found" });
+    }
+
+    const content = fs.readFileSync(jsonlPath, "utf8");
+    const messages = content
+      .trim()
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => {
+        try { return JSON.parse(line); } catch { return null; }
+      })
+      .filter(Boolean);
+
+    return res.json({ ok: true, sessionId, messages });
+  } catch (err) {
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 app.get("/tui", requireSetupAuth, (_req, res) => {
   if (!ENABLE_WEB_TUI) {
     return res
