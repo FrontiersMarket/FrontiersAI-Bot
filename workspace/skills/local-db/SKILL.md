@@ -209,44 +209,83 @@ GROUP BY CAST(score AS INTEGER)
 ORDER BY bcs_score
 ```
 
-### Recent video events
+### Video events — query, URL lookup, and response format
 
-```sql
-SELECT event_type, event_date, datetime(start_timestamp, 'unixepoch') as event_time, confidence
-FROM video_events
-WHERE is_deleted = 0
-ORDER BY event_date DESC, start_timestamp DESC
-LIMIT 20
+#### ⚠️ CRITICAL — which URL to use
+
+`video_events` has a `video_uri` column. **NEVER use it.** It is an internal `gs://` GCS path, not a playable URL.
+
+The correct URL is **`camera_videos.video_url`** — an HTTPS link to the actual recording.
+
+You reach it by joining:
+```
+video_events.video_uuid  →  camera_videos.uuid  →  camera_videos.video_url
 ```
 
-### Video events with camera video URLs
+That is the only URL you will ever shorten and show to the user.
 
-When the user asks to **watch / see / view** a video for an event, join `video_events` to
-`camera_videos` to get the actual video URL:
+#### Query
 
 ```sql
 SELECT
   ve.event_type,
   ve.event_date,
-  datetime(ve.start_timestamp, 'unixepoch') as event_time,
+  datetime(ve.start_timestamp, 'unixepoch') AS event_time,
   ve.confidence,
+  COALESCE(c.display_name, c.name) AS camera_name,
   cv.video_url
 FROM video_events ve
 JOIN camera_videos cv ON cv.uuid = ve.video_uuid AND cv.is_deleted = 0
+LEFT JOIN cameras c ON c.uuid = cv.camera_uuid AND c.is_deleted = 0
 WHERE ve.is_deleted = 0
 ORDER BY ve.event_date DESC, ve.start_timestamp DESC
 LIMIT 20
 ```
 
-**Important — URL shortening:** Every `video_url` returned from `camera_videos` MUST be
-shortened using the **shorten** skill before presenting it to the user. Run the shorten
-skill once per URL:
-
-```bash
-/data/workspace/skills/shorten/shorten.sh "<video_url>"
+Filter by event type when asked (e.g. distress, calving, FEED_WATER_ACCESS):
+```sql
+AND ve.event_type = 'distress'
 ```
 
-Always present the shortened URL to the user, never the raw long URL.
+Filter by date range when asked:
+```sql
+AND ve.event_date >= date('now', '-7 days')
+```
+
+#### Response format — NON-NEGOTIABLE
+
+For every event in the result:
+
+1. Read `cv.video_url` from the row
+2. Run: `/data/workspace/skills/shorten/shorten.sh "<cv.video_url>"`
+3. Use the shortened result as the link — if shortening fails, use the raw `cv.video_url`
+4. Output one block per event:
+
+```
+<event_type (human readable)> — <camera_name> — <event_date> at <event_time> (<confidence>%)
+<shortened cv.video_url>
+```
+
+Example output (iMessage — plain text):
+```
+Distress detected — Pen 120 — March 27 at 2:14 PM (91%)
+https://is.gd/xK92mA
+
+Feed & water access — Pen 140 — March 27 at 6:03 AM (87%)
+https://is.gd/pL44nQ
+```
+
+Example output (Slack/Discord — markdown):
+```
+*Distress detected* — Pen 120 — March 27 at 2:14 PM (91%)
+https://is.gd/xK92mA
+
+*Feed & water access* — Pen 140 — March 27 at 6:03 AM (87%)
+https://is.gd/pL44nQ
+```
+
+- Every event gets a link. No event is shown without its video URL.
+- The link is always from `camera_videos.video_url`. Never from `video_events.video_uri` or any other field.
 
 ### Check last sync time
 

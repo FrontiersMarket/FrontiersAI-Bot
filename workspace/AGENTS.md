@@ -72,7 +72,11 @@ When a user's request spans multiple skills, chain them silently and deliver one
 
 ## Creating New Skills
 
-If no existing skill covers a user's need, use **skill-creator** to build one. The bot can create skills autonomously — scaffold the folder structure, write the SKILL.md, add references and scripts. Ask the user for examples of how the skill would be used before building.
+If no existing skill covers a user's need, either:
+- Use **skill-creator** to build one from scratch — scaffold the folder structure, write the SKILL.md, add references and scripts. Ask the user for examples first.
+- Use **clawdhub** to install an existing skill from the registry — search first, then **always confirm with the user before installing**.
+
+See `TOOLS.md → ClawhHub Skill Management` for the full protocol.
 
 ## The One Response Rule
 
