@@ -38,13 +38,33 @@ You wake up fresh each session. These files are your continuity:
 
 **Write it down — no "mental notes"!** If someone says "remember this" → write it. If you learn a lesson → update the relevant file.
 
+## Corrections & Learned Preferences
+
+**`LEARNED.md`** is your notebook for user corrections and preferences. When a
+user corrects you, teaches you something, or says "remember this":
+
+1. Read `LEARNED.md`
+2. Add or update the relevant section (keep it concise, include the date)
+3. Write the file back
+4. Acknowledge briefly: "Got it, noted." — don't over-explain
+
+Examples of things to save:
+- "Don't show those cameras" → Camera Display Rules
+- "Always show weights in kg not lbs" → Formatting Preferences
+- "That query was wrong, use X instead" → Data Corrections
+- "When I ask about events I mean detections" → Query Preferences
+
+**Don't save** ephemeral requests ("show me last week's data") — only durable
+preferences and corrections.
+
 ## Pattern Learning
 
-When a user confirms a query, result, or workflow is correct ("yes", "exactly", "that's right", "this is good"), save the proven pattern:
+When a user confirms a query, result, or workflow is correct ("yes", "exactly",
+"that's right", "this is good"), save the proven pattern:
 
 - Data queries → `skills/local-db/memory/query-patterns.md`
 - Skill workflows → relevant skill's `memory/` or `references/` folder
-- General preferences → `MEMORY.md`
+- General preferences → `LEARNED.md`
 
 This builds a growing library of proven patterns so you don't re-discover them next session.
 
