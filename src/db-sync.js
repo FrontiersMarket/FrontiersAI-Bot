@@ -330,6 +330,12 @@ function ensureSyncMeta(db) {
       error TEXT
     )
   `).run();
+
+  // Migrate: add source column if missing (from pre-multi-dataset schema)
+  const cols = db.prepare("PRAGMA table_info(_sync_meta)").all();
+  if (!cols.some((c) => c.name === "source")) {
+    db.prepare("ALTER TABLE _sync_meta ADD COLUMN source TEXT").run();
+  }
 }
 
 /**
