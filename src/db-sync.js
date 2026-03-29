@@ -37,16 +37,71 @@ function loadSyncConfig() {
 }
 
 // ── Filter builders ──────────────────────────────────────────────────────────
-// Each filter type is a function (ranchUuid, source) → WHERE clause string.
-// `source` has { project, dataset } for cross-dataset subquery references.
-// The "public" source is always used for core lookup tables (livestock, cameras).
+// Each filter type is a function (ranchUuid) → WHERE clause string.
+// Cross-region filters (camera_name_sub, livestock_sub, camera_sub, video_sub)
+// use pre-fetched lookup values to avoid BQ cross-region subquery errors.
+// The lookup cache is populated once per sync cycle by prefetchLookups().
 
-function buildFilterFn(filterType, sources) {
+const lookupCache = {
+  livestockUuids: [],  // uuid list from public.livestock for this ranch
+  cameraUuids: [],     // uuid list from public.cameras for this ranch
+  cameraNames: [],     // name list from public.cameras for this ranch
+  cameraVideoUuids: [], // uuid list from public.camera_videos for this ranch
+};
+
+/**
+ * Pre-fetch lookup values from public dataset (us-central1) so that
+ * cross-region tables can filter without BQ cross-region subqueries.
+ */
+async function prefetchLookups(ranchUuid, sources) {
   const pub = sources.public;
   if (!pub) throw new Error("sync config must include a 'public' source");
 
-  const fqPublic = (table) => `\`${pub.project}.${pub.dataset}.${table}\``;
+  const fq = (table) => `\`${pub.project}.${pub.dataset}.${table}\``;
 
+  // Livestock UUIDs
+  const [livestockRows] = await bigquery.query({
+    query: `SELECT uuid FROM ${fq("livestock")} WHERE ranch_uuid = '${ranchUuid}'`,
+    location: pub.location,
+  });
+  lookupCache.livestockUuids = livestockRows.map((r) => r.uuid);
+
+  // Camera UUIDs + names
+  const [cameraRows] = await bigquery.query({
+    query: `SELECT uuid, name FROM ${fq("cameras")} WHERE ranch_uuid = '${ranchUuid}'`,
+    location: pub.location,
+  });
+  lookupCache.cameraUuids = cameraRows.map((r) => r.uuid);
+  lookupCache.cameraNames = cameraRows.map((r) => r.name);
+
+  // Camera video UUIDs (scoped through cameras)
+  if (lookupCache.cameraUuids.length > 0) {
+    const uuidList = lookupCache.cameraUuids.map((u) => `'${u}'`).join(",");
+    const [videoRows] = await bigquery.query({
+      query: `SELECT uuid FROM ${fq("camera_videos")} WHERE camera_uuid IN (${uuidList})`,
+      location: pub.location,
+    });
+    lookupCache.cameraVideoUuids = videoRows.map((r) => r.uuid);
+  } else {
+    lookupCache.cameraVideoUuids = [];
+  }
+
+  console.log(
+    `[db-sync] lookups: ${lookupCache.livestockUuids.length} livestock, ` +
+    `${lookupCache.cameraNames.length} cameras, ` +
+    `${lookupCache.cameraVideoUuids.length} camera_videos`
+  );
+}
+
+/**
+ * Escape a string for safe use in a SQL IN(...) list.
+ */
+function sqlList(values) {
+  if (values.length === 0) return "('')"; // match nothing
+  return `(${values.map((v) => `'${String(v).replace(/'/g, "''")}'`).join(",")})`;
+}
+
+function buildFilterFn(filterType) {
   switch (filterType) {
     case "ranch_uuid":
       return (uuid) => `ranch_uuid = '${uuid}'`;
@@ -55,20 +110,16 @@ function buildFilterFn(filterType, sources) {
       return (uuid) => `uuid = '${uuid}'`;
 
     case "livestock_sub":
-      return (uuid) =>
-        `livestock_uuid IN (SELECT uuid FROM ${fqPublic("livestock")} WHERE ranch_uuid = '${uuid}')`;
+      return () => `livestock_uuid IN ${sqlList(lookupCache.livestockUuids)}`;
 
     case "camera_sub":
-      return (uuid) =>
-        `camera_uuid IN (SELECT uuid FROM ${fqPublic("cameras")} WHERE ranch_uuid = '${uuid}')`;
+      return () => `camera_uuid IN ${sqlList(lookupCache.cameraUuids)}`;
 
     case "video_sub":
-      return (uuid) =>
-        `video_uuid IN (SELECT uuid FROM ${fqPublic("camera_videos")} WHERE camera_uuid IN (SELECT uuid FROM ${fqPublic("cameras")} WHERE ranch_uuid = '${uuid}'))`;
+      return () => `video_uuid IN ${sqlList(lookupCache.cameraVideoUuids)}`;
 
     case "camera_name_sub":
-      return (uuid) =>
-        `camera_name IN (SELECT name FROM ${fqPublic("cameras")} WHERE ranch_uuid = '${uuid}')`;
+      return () => `camera_name IN ${sqlList(lookupCache.cameraNames)}`;
 
     default:
       throw new Error(`Unknown filter type: ${filterType}`);
@@ -209,7 +260,7 @@ async function syncTable(db, tableConfig, ranchUuid, sources) {
   const source = sources[sourceKey];
   if (!source) throw new Error(`Unknown source '${sourceKey}' for table '${name}'`);
 
-  const filterFn = buildFilterFn(filterType, sources);
+  const filterFn = buildFilterFn(filterType);
 
   // 1. Get schema
   const schema = await getTableSchema(name, source);
@@ -314,6 +365,16 @@ export async function runSync(ranchUuid, dbPath) {
     `${enabledTables.filter((t) => t.priority === "medium").length} medium, ` +
     `${enabledTables.filter((t) => t.priority === "low").length} low)`
   );
+
+  // Pre-fetch lookup values from public dataset so cross-region filters work
+  try {
+    await prefetchLookups(ranchUuid, sources);
+  } catch (err) {
+    syncState.running = false;
+    syncState.lastSyncError = `Failed to prefetch lookups: ${err.message}`;
+    console.error(`[db-sync] ${syncState.lastSyncError}`);
+    return;
+  }
 
   const db = new Database(dbPath);
   // WAL mode for better concurrent read performance
