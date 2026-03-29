@@ -52,7 +52,7 @@ if [ "$FORCE" = true ] || echo "$CHANGED" | grep -qE "^(Dockerfile|src/|config/)
   echo "=== Recreating container ==="
   docker stop "$CONTAINER" 2>/dev/null || true
   docker rm "$CONTAINER" 2>/dev/null || true
-  pnpm up
+  pnpm run up
   echo "  container rebuilt and restarted ✓"
 else
   echo "=== Restarting container ==="
