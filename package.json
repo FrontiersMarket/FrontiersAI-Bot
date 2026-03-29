@@ -10,7 +10,7 @@
     "watch": "turbo run docker:logs dev:watch",
     "shell": "docker exec -it frontiersai-bot bash",
     "tui": "docker exec -it frontiersai-bot node /usr/local/lib/node_modules/openclaw/dist/entry.js tui",
-    "up": "docker start frontiersai-bot 2>/dev/null || docker run -d --name frontiersai-bot -p 8080:8080 -e PORT=8080 -e SETUP_PASSWORD=test -e ENABLE_WEB_TUI=true -e OPENCLAW_STATE_DIR=/data/.openclaw -e OPENCLAW_WORKSPACE_DIR=/data/workspace -v $PWD/.tmpdata:/data frontiersai-bot && echo 'Container started'",
+    "up": "docker start frontiersai-bot 2>/dev/null || docker run -d --name frontiersai-bot -p 8080:8080 --env-file .env -v $PWD/.tmpdata:/data frontiersai-bot && echo 'Container started'",
     "down": "docker stop frontiersai-bot 2>/dev/null && echo 'Container stopped'",
     "dev:watch": "node scripts/watch-workspace.mjs",
     "docker:logs": "docker logs -f frontiersai-bot",
