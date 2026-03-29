@@ -1,0 +1,414 @@
+{
+  "sources": {
+    "public": {
+      "project": "frontiersmarketplace",
+      "dataset": "public",
+      "location": "us-central1"
+    },
+    "event_detection_v2": {
+      "project": "frontiersmarketplace",
+      "dataset": "event_detection_v2",
+      "location": "US"
+    },
+    "user_video_upload": {
+      "project": "frontiersmarketplace",
+      "dataset": "user_video_upload",
+      "location": "US"
+    }
+  },
+
+  "tables": [
+    {
+      "name": "ranch",
+      "source": "public",
+      "priority": "high",
+      "filter": "ranch_uuid_is_uuid",
+      "note": "Single row — this ranch only"
+    },
+    {
+      "name": "livestock",
+      "source": "public",
+      "priority": "high",
+      "filter": "ranch_uuid",
+      "note": "Central entity — all animals"
+    },
+    {
+      "name": "cameras",
+      "source": "public",
+      "priority": "high",
+      "filter": "ranch_uuid",
+      "note": "Camera registry. Join key for confirmed_events (camera_name) and weight_reports"
+    },
+    {
+      "name": "weight_record",
+      "source": "public",
+      "priority": "high",
+      "filter": "livestock_sub",
+      "note": "Per-animal weights (scale or AI). Complements weight_reports (pen-level)"
+    },
+    {
+      "name": "group",
+      "source": "public",
+      "priority": "medium",
+      "filter": "ranch_uuid",
+      "note": "Livestock groups/pens"
+    },
+    {
+      "name": "land",
+      "source": "public",
+      "priority": "medium",
+      "filter": "ranch_uuid",
+      "note": "Pastures and land parcels"
+    },
+    {
+      "name": "epds",
+      "source": "public",
+      "priority": "medium",
+      "filter": "livestock_sub",
+      "note": "Estimated Progeny Differences — genetic merit"
+    },
+    {
+      "name": "note_record",
+      "source": "public",
+      "priority": "medium",
+      "filter": "livestock_sub",
+      "note": "User notes on animals"
+    },
+    {
+      "name": "contacts",
+      "source": "public",
+      "priority": "low",
+      "filter": "ranch_uuid"
+    },
+    {
+      "name": "rainfall",
+      "source": "public",
+      "priority": "low",
+      "filter": "ranch_uuid"
+    },
+    {
+      "name": "events",
+      "source": "public",
+      "priority": "low",
+      "filter": "ranch_uuid",
+      "note": "Ranch calendar events (not AI detections)"
+    },
+    {
+      "name": "equipment",
+      "source": "public",
+      "priority": "low",
+      "filter": "ranch_uuid"
+    },
+    {
+      "name": "tanks",
+      "source": "public",
+      "priority": "low",
+      "filter": "ranch_uuid"
+    },
+    {
+      "name": "semen",
+      "source": "public",
+      "priority": "low",
+      "filter": "ranch_uuid"
+    },
+    {
+      "name": "categories",
+      "source": "public",
+      "priority": "low",
+      "filter": "ranch_uuid"
+    },
+    {
+      "name": "expenses",
+      "source": "public",
+      "priority": "low",
+      "filter": "ranch_uuid"
+    },
+    {
+      "name": "income",
+      "source": "public",
+      "priority": "low",
+      "filter": "ranch_uuid"
+    },
+    {
+      "name": "ranch_settings",
+      "source": "public",
+      "priority": "low",
+      "filter": "ranch_uuid"
+    },
+    {
+      "name": "ranch_association",
+      "source": "public",
+      "priority": "low",
+      "filter": "ranch_uuid"
+    },
+    {
+      "name": "salesbook",
+      "source": "public",
+      "priority": "low",
+      "filter": "ranch_uuid"
+    },
+    {
+      "name": "prediction_results",
+      "source": "public",
+      "priority": "low",
+      "filter": "ranch_uuid"
+    },
+    {
+      "name": "unverified_weight_records",
+      "source": "public",
+      "priority": "low",
+      "filter": "ranch_uuid"
+    },
+    {
+      "name": "bcs_record",
+      "source": "public",
+      "priority": "low",
+      "filter": "livestock_sub"
+    },
+    {
+      "name": "vaccination_record",
+      "source": "public",
+      "priority": "low",
+      "filter": "livestock_sub"
+    },
+    {
+      "name": "calving_record",
+      "source": "public",
+      "priority": "low",
+      "filter": "livestock_sub"
+    },
+    {
+      "name": "death_record",
+      "source": "public",
+      "priority": "low",
+      "filter": "livestock_sub"
+    },
+    {
+      "name": "pregnancy_check_record",
+      "source": "public",
+      "priority": "low",
+      "filter": "livestock_sub"
+    },
+    {
+      "name": "transfer_record",
+      "source": "public",
+      "priority": "low",
+      "filter": "livestock_sub"
+    },
+    {
+      "name": "harvest_record",
+      "source": "public",
+      "priority": "low",
+      "filter": "livestock_sub"
+    },
+    {
+      "name": "breeding_serv_record",
+      "source": "public",
+      "priority": "low",
+      "filter": "livestock_sub"
+    },
+    {
+      "name": "transaction_record",
+      "source": "public",
+      "priority": "low",
+      "filter": "livestock_sub"
+    },
+    {
+      "name": "doctoring_record",
+      "source": "public",
+      "priority": "low",
+      "filter": "livestock_sub"
+    },
+    {
+      "name": "foot_score_record",
+      "source": "public",
+      "priority": "low",
+      "filter": "livestock_sub"
+    },
+    {
+      "name": "implant_record",
+      "source": "public",
+      "priority": "low",
+      "filter": "livestock_sub"
+    },
+    {
+      "name": "udder_teat_record",
+      "source": "public",
+      "priority": "low",
+      "filter": "livestock_sub"
+    },
+    {
+      "name": "ear_tag_record",
+      "source": "public",
+      "priority": "low",
+      "filter": "livestock_sub"
+    },
+    {
+      "name": "worming_record",
+      "source": "public",
+      "priority": "low",
+      "filter": "livestock_sub"
+    },
+    {
+      "name": "culling_record",
+      "source": "public",
+      "priority": "low",
+      "filter": "livestock_sub"
+    },
+    {
+      "name": "horning_record",
+      "source": "public",
+      "priority": "low",
+      "filter": "livestock_sub"
+    },
+    {
+      "name": "heat_detect_record",
+      "source": "public",
+      "priority": "low",
+      "filter": "livestock_sub"
+    },
+    {
+      "name": "transport_record",
+      "source": "public",
+      "priority": "low",
+      "filter": "livestock_sub"
+    },
+    {
+      "name": "consign_record",
+      "source": "public",
+      "priority": "low",
+      "filter": "livestock_sub"
+    },
+    {
+      "name": "exam_record",
+      "source": "public",
+      "priority": "low",
+      "filter": "livestock_sub"
+    },
+    {
+      "name": "perm_record",
+      "source": "public",
+      "priority": "low",
+      "filter": "livestock_sub"
+    },
+    {
+      "name": "vaccinations",
+      "source": "public",
+      "priority": "low",
+      "filter": "livestock_sub"
+    },
+    {
+      "name": "treatments",
+      "source": "public",
+      "priority": "low",
+      "filter": "livestock_sub"
+    },
+    {
+      "name": "gain_tests",
+      "source": "public",
+      "priority": "low",
+      "filter": "livestock_sub"
+    },
+    {
+      "name": "measurements",
+      "source": "public",
+      "priority": "low",
+      "filter": "livestock_sub"
+    },
+    {
+      "name": "carcass_data",
+      "source": "public",
+      "priority": "low",
+      "filter": "livestock_sub"
+    },
+    {
+      "name": "breedings",
+      "source": "public",
+      "priority": "low",
+      "filter": "livestock_sub"
+    },
+    {
+      "name": "breed_compositions",
+      "source": "public",
+      "priority": "low",
+      "filter": "livestock_sub"
+    },
+    {
+      "name": "ownerships",
+      "source": "public",
+      "priority": "low",
+      "filter": "livestock_sub"
+    },
+    {
+      "name": "gallery_item",
+      "source": "public",
+      "priority": "low",
+      "filter": "livestock_sub"
+    },
+    {
+      "name": "camera_videos",
+      "source": "public",
+      "priority": "low",
+      "filter": "camera_sub",
+      "hidden": true,
+      "note": "Synced for video URL lookups (confirmed_events.source_uri → camera_videos.video_path → video_url). Not a primary query table."
+    },
+    {
+      "name": "land_cameras",
+      "source": "public",
+      "priority": "low",
+      "filter": "camera_sub"
+    },
+    {
+      "name": "camera_reports",
+      "source": "public",
+      "priority": "low",
+      "filter": "camera_sub"
+    },
+
+    {
+      "name": "confirmed_events",
+      "source": "event_detection_v2",
+      "priority": "high",
+      "filter": "camera_name_sub",
+      "note": "ML-detected events (health, handling, counts). Replaces video_events. Join to cameras on camera_name. GCS paths only — no playable URLs yet (pending camera_videos seeding)."
+    },
+
+    {
+      "name": "weight_reports",
+      "source": "user_video_upload",
+      "priority": "high",
+      "filter": "ranch_uuid",
+      "note": "Pen/camera-level daily weights from video pipeline. Key columns: Pen_Median_RW5 (smoothed), Weight_Trend_Fit (linear regression — primary display value), Estimated_Pen_ADG."
+    },
+    {
+      "name": "camera_configs",
+      "source": "user_video_upload",
+      "priority": "medium",
+      "filter": "ranch_uuid",
+      "note": "KV config per camera — context for weight prediction/counting"
+    },
+    {
+      "name": "orch_configs",
+      "source": "user_video_upload",
+      "priority": "medium",
+      "filter": "ranch_uuid",
+      "note": "KV config per ranch — orchestration settings for weight pipeline"
+    },
+    {
+      "name": "processing_pipeline_results",
+      "source": "user_video_upload",
+      "priority": "low",
+      "filter": "ranch_uuid",
+      "note": "Raw pipeline KV output. Dynamic schema. Fallback only — prefer weight_reports."
+    }
+  ],
+
+  "disabled": [
+    {
+      "name": "video_events",
+      "source": "public",
+      "reason": "Replaced by event_detection_v2.confirmed_events — richer schema, better event model"
+    }
+  ]
+}

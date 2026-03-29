@@ -4,9 +4,9 @@ description: >
   Query the local SQLite ranch database at /data/ranch_data.db.
   Use for ALL data queries about ranches, livestock, cattle records, weights,
   BCS scores, vaccinations, notes, groups, pastures, cameras, videos, events,
-  and any other Frontiers Market operational data.
-  This database is a ranch-scoped replica of the BigQuery dataset — do NOT
-  query BigQuery (bq CLI) directly anymore.
+  weight trends, pen-level reports, and any other Frontiers Market data.
+  This database is a ranch-scoped materialized view synced from multiple
+  BigQuery datasets — do NOT query BigQuery (bq CLI) directly.
 ---
 
 # Local DB — Ranch Data Skill
@@ -18,7 +18,8 @@ sync time. **You do not need to add a `ranch_uuid` filter to your queries** —
 the data is already ranch-specific.
 
 You MUST still filter `is_deleted = 0` (soft-deleted rows are included in the
-sync) unless the user explicitly asks about deleted records.
+sync) unless the user explicitly asks about deleted records. Not all tables have
+`is_deleted` — see table docs below.
 
 ---
 
@@ -53,35 +54,255 @@ SQL
 
 ---
 
-## Schema
+## Data Sources
 
-Tables are the same as the BigQuery `frontiersmarketplace.public` dataset but:
+This database syncs from three BigQuery datasets. All tables live in one
+SQLite file — use bare table names with no prefix.
 
-- **No project/dataset prefix** — use bare table names: `livestock`, `weight_record`, etc.
-- **No backticks** — SQLite uses double quotes for reserved words: `"group"`
-- **BOOLEAN stored as INTEGER** — `0` = false, `1` = true (use `= 0` / `= 1`)
-- **No `datastream_metadata` column** — STRUCT columns are not synced
+| Source Dataset | Tables | What it covers |
+|---|---|---|
+| `public` | ranch, livestock, cameras, weight_record, group, land, epds, note_record, expenses, income, + many more | Core ranch & livestock operational data |
+| `event_detection_v2` | confirmed_events | ML-detected events (health, handling, animal counts) |
+| `user_video_upload` | weight_reports, camera_configs, orch_configs, processing_pipeline_results | Video weight pipeline — pen-level weights & camera config |
 
-### Core Entity Tables
+---
 
-| Table | Description |
-|-------|-------------|
-| `ranch` | Ranch/operation info (one row — this ranch only) |
-| `livestock` | Animals — use `status` for lifecycle, `is_deleted` for soft-delete |
-| `"group"` | Livestock groups — reserved word, must double-quote |
-| `land` | Pastures and land parcels |
-| `cameras` | Camera hardware |
+## HIGH PRIORITY TABLES
 
-### Record Tables
+These are the tables the bot uses most. Know them well.
+
+### `ranch`
+
+Single row — this ranch's info.
+
+| Column | Type | Notes |
+|---|---|---|
+| `uuid` | TEXT | Ranch UUID |
+| `name` | TEXT | Ranch name |
+| *(other columns vary)* | | General ranch metadata |
+
+### `livestock`
+
+The central entity — every animal on this ranch.
+
+| Column | Type | Notes |
+|---|---|---|
+| `uuid` | TEXT | Primary key |
+| `ear_tag_id` | TEXT | Visual tag ID (user-facing) |
+| `name` | TEXT | Animal name (nullable) |
+| `status` | TEXT | `ACTIVE`, `INACTIVE`, `SOLD`, `DEAD`, `REFERENCE` |
+| `sex` | TEXT | Sex of animal |
+| `breed` | TEXT | Breed |
+| `group_uuid` | TEXT | FK → `"group".uuid` (nullable — use LEFT JOIN) |
+| `land_uuid` | TEXT | FK → `land.uuid` (nullable — use LEFT JOIN) |
+| `sire_uuid` | TEXT | FK → `livestock.uuid` (nullable) |
+| `dam_uuid` | TEXT | FK → `livestock.uuid` (nullable) |
+| `dob` | TEXT | Date of birth |
+| `is_deleted` | INTEGER | 0/1 soft delete — always filter `= 0` |
+
+**Active herd = `WHERE is_deleted = 0 AND status = 'ACTIVE'`**
+
+Display: `COALESCE(l.name, l.ear_tag_id, 'Unknown')`
+
+### `cameras`
+
+Camera hardware registry. **Join key for ML tables** (confirmed_events, weight_reports).
+
+| Column | Type | Notes |
+|---|---|---|
+| `uuid` | TEXT | Primary key (camera_uuid) |
+| `name` | TEXT | Camera name — **join key for confirmed_events and weight_reports** |
+| `display_name` | TEXT | Human-friendly name (nullable) |
+| `ranch_uuid` | TEXT | FK → ranch |
+| `is_deleted` | INTEGER | 0/1 |
+
+Display: `COALESCE(c.display_name, c.name)`
+
+### `weight_record`
+
+**Per-animal** weight entries (from scale or manual entry).
+
+| Column | Type | Notes |
+|---|---|---|
+| `livestock_uuid` | TEXT | FK → `livestock.uuid` |
+| `weight` | REAL | Weight in lbs |
+| `date_weighed` | TEXT | Date of weighing |
+| `is_deleted` | INTEGER | 0/1 |
+
+Use for: individual animal weights, "how much does #1042 weigh?"
+
+### `confirmed_events` (from event_detection_v2)
+
+ML-detected events from camera video analysis. Health alerts, animal handling
+events, and animal counts. **This is the primary events table** — replaces the
+old `video_events` table.
+
+| Column | Type | Notes |
+|---|---|---|
+| `event_id` | TEXT | Unique event ID |
+| `run_id` | TEXT | Pipeline run ID |
+| `created_at` | TEXT | Timestamp of detection |
+| `model_name` | TEXT | ML model used |
+| `pipeline_version` | TEXT | Pipeline version |
+| `gcs_uri` | TEXT | GCS path to processed clip — **internal, do not show to user** |
+| `source_uri` | TEXT | GCS path to source video — **internal, do not show to user** |
+| `chunk_index` | INTEGER | Video chunk number |
+| `chunk_offset_s` | REAL | Offset in seconds within chunk |
+| `date_str` | TEXT | Event date (DATE format) |
+| `camera_name` | TEXT | **Join key → `cameras.name`** |
+| `group_index` | INTEGER | Group/batch index within analysis |
+| `window_index` | INTEGER | Time window index |
+| `animal_id` | TEXT | Identified animal (nullable) |
+| `specialist` | TEXT | Specialist model that made the decision |
+| `decision` | TEXT | Final decision/classification |
+| `event_type` | TEXT | Event category (health, handling, count, etc.) |
+| `confidence` | REAL | Confidence score (0-1) |
+| `severity` | TEXT | Severity level |
+| `refined_start_t` | TEXT | Event start timestamp (refined) |
+| `refined_end_t` | TEXT | Event end timestamp (refined) |
+| `refined_grid_location_json` | TEXT | JSON — spatial location in frame |
+| `description` | TEXT | **Human-readable event description — show this to user** |
+| `reasoning` | TEXT | **AI reasoning — good context for detailed answers** |
+| `triage_animal_json` | TEXT | JSON — triage details |
+| `specialist_json` | TEXT | JSON — specialist model output |
+| `error` | TEXT | Error message if detection failed (nullable) |
+
+**No `is_deleted` column.** No `ranch_uuid` — scoped via camera_name at sync time.
+
+**No playable video URL yet.** GCS URIs are internal paths. Playable URLs will
+be available once camera_videos is seeded with matching video entries. Until
+then, present events without video links.
+
+### `weight_reports` (from user_video_upload)
+
+**Pen/camera-level** daily weight data from the video pipeline. This is the
+primary source for **group weight trends**.
+
+| Column | Type | Notes |
+|---|---|---|
+| `Date` | TEXT | Report date |
+| `ranch_uuid` | TEXT | FK → ranch |
+| `camera_uuid` | TEXT | FK → `cameras.uuid` |
+| `camera_name` | TEXT | **Join key → `cameras.name`** |
+| `Pen_Median_RW5` | REAL | Smoothed pen median weight (rolling window 5-day) |
+| `Weight_Trend_Fit` | REAL | **Linear regression weight prediction — primary display value** |
+| `Entry_Weight` | REAL | Weight at pen entry |
+| `Entry_Date` | TEXT | Date animals entered pen |
+| `Estimated_Pen_ADG` | REAL | Average daily gain for pen |
+| `source_video` | TEXT | Source video reference |
+
+**No `is_deleted` column.**
+
+Use for: pen weight trends, group ADG, "how are the cattle in Pen 120 gaining?"
+
+**Display `Weight_Trend_Fit` as the primary weight value** — it's the ML
+prediction. Use `Pen_Median_RW5` as supporting/smoothed context.
+
+---
+
+## TWO WEIGHT SOURCES — Know the Difference
+
+| | `weight_record` | `weight_reports` |
+|---|---|---|
+| **Granularity** | Per animal | Per pen/camera |
+| **Source** | Scale, manual entry, or AI prediction | Video pipeline (daily) |
+| **Join key** | `livestock_uuid` → `livestock` | `camera_name` → `cameras` |
+| **Primary column** | `weight` | `Weight_Trend_Fit` |
+| **Use when** | User asks about a specific animal's weight | User asks about pen/group trends, ADG, weight curves |
+
+If the user asks "how much do the cattle weigh?" without specifying — start
+with `weight_reports` for a high-level pen summary, then offer per-animal
+detail from `weight_record` as a follow-up.
+
+---
+
+## MEDIUM PRIORITY TABLES
+
+### `"group"`
+
+Livestock groups/pens. **Reserved word — must double-quote.**
+
+| Column | Type | Notes |
+|---|---|---|
+| `uuid` | TEXT | Primary key |
+| `name` | TEXT | Group name |
+| `ranch_uuid` | TEXT | FK → ranch |
+| `is_deleted` | INTEGER | 0/1 |
+
+### `land`
+
+Pastures and land parcels.
+
+| Column | Type | Notes |
+|---|---|---|
+| `uuid` | TEXT | Primary key |
+| `name` | TEXT | Pasture/parcel name |
+| `ranch_uuid` | TEXT | FK → ranch |
+| `is_deleted` | INTEGER | 0/1 |
+
+### `epds`
+
+Estimated Progeny Differences — genetic merit scores.
+
+| Column | Type | Notes |
+|---|---|---|
+| `livestock_uuid` | TEXT | FK → `livestock.uuid` |
+| `record_date` | TEXT | Date of EPD record |
+| *(EPD-specific columns vary)* | | CED, BW, WW, YW, MILK, etc. |
+
+**No `is_deleted` column.**
+
+### `note_record`
+
+User notes attached to animals.
+
+| Column | Type | Notes |
+|---|---|---|
+| `livestock_uuid` | TEXT | FK → `livestock.uuid` |
+| `record_date` | TEXT | Date of note |
+| `note` | TEXT | Note content |
+| `is_deleted` | INTEGER | 0/1 |
+
+### `camera_configs` (from user_video_upload)
+
+Key-value configuration per camera — context for weight prediction/counting.
+
+| Column | Type | Notes |
+|---|---|---|
+| `config_id` | TEXT | Primary key |
+| `ranch_uuid` | TEXT | FK → ranch |
+| `camera_name` | TEXT | Join key → `cameras.name` |
+| `camera_id` | INTEGER | Camera ID |
+| `key` | TEXT | Config key name |
+| `value` | TEXT | JSON value |
+| `effective_date` | TEXT | When this config takes effect |
+
+### `orch_configs` (from user_video_upload)
+
+Key-value orchestration config per ranch.
+
+| Column | Type | Notes |
+|---|---|---|
+| `config_id` | TEXT | Primary key |
+| `ranch_uuid` | TEXT | FK → ranch |
+| `key` | TEXT | Config key name |
+| `value` | TEXT | JSON value |
+
+---
+
+## LOW PRIORITY TABLES
+
+These tables exist in the database and may be queried, but are often
+underpopulated. Listed here for reference.
+
+### Record Tables (livestock-scoped)
 
 All have `livestock_uuid`, `is_deleted` (INTEGER 0/1), and a date column.
 
 | Table | Primary Date Column |
 |-------|---------------------|
-| `weight_record` | `date_weighed` |
 | `bcs_record` | `record_date` |
 | `vaccination_record` | `record_date` |
-| `note_record` | `record_date` |
 | `calving_record` | `record_date` |
 | `death_record` | `record_date` |
 | `pregnancy_check_record` | `record_date` |
@@ -91,20 +312,33 @@ All have `livestock_uuid`, `is_deleted` (INTEGER 0/1), and a date column.
 | `doctoring_record` | `record_date` |
 | `foot_score_record` | `record_date` |
 | `worming_record` | `record_date` |
-| *(and more — same pattern)* | `record_date` |
+| `transaction_record` | `record_date` |
+| `implant_record` | `record_date` |
+| `udder_teat_record` | `record_date` |
+| `ear_tag_record` | `record_date` |
+| `culling_record` | `record_date` |
+| `horning_record` | `record_date` |
+| `heat_detect_record` | `record_date` |
+| `transport_record` | `record_date` |
+| `consign_record` | `record_date` |
+| `exam_record` | `record_date` |
+| `perm_record` | `record_date` |
 
 ### Advanced Livestock Tables
 
 | Table | Primary Date | Notes |
 |-------|-------------|-------|
-| `vaccinations` | `vaccination_date` | Detailed — has `vaccine_name`, `dosage`, `administered_by` |
+| `vaccinations` | `vaccination_date` | Detailed — vaccine_name, dosage, administered_by |
 | `treatments` | `treatment_date` | Detailed treatment records |
 | `measurements` | `measurement_date` | Physical measurements |
-| `epds` | `record_date` | Estimated Progeny Differences |
 | `breedings` | `breeding_date` | Breeding events |
 | `carcass_data` | `slaughter_date` | Harvest/carcass data |
 | `gain_tests` | — | ADG, RFI, gain test results |
 | `gallery_item` | `created_at` | Animal photos |
+| `breed_compositions` | — | Breed percentages |
+| `ownerships` | — | Ownership records |
+
+**None of these have `is_deleted`.**
 
 ### Ranch Operations
 
@@ -119,17 +353,54 @@ All have `livestock_uuid`, `is_deleted` (INTEGER 0/1), and a date column.
 | `tanks` | `created_at` |
 | `semen` | `created_at` |
 | `salesbook` | `date_of_sale` |
+| `categories` | — |
+| `ranch_settings` | — |
+| `ranch_association` | — |
+| `prediction_results` | — |
+| `unverified_weight_records` | — |
 
-### Camera & Video
+### Camera & Video (supporting)
 
 | Table | Notes |
 |-------|-------|
-| `cameras` | Camera hardware |
-| `camera_videos` | Video recordings |
-| `video_events` | AI-detected events (distress, calving, count, etc.) |
+| `camera_videos` | Video recordings — **join table only** (use for URL lookup, not direct queries) |
 | `land_cameras` | Junction: camera ↔ pasture |
 | `camera_reports` | Pen reports (access via `report_url`) |
-| `prediction_results` | AI weight predictions |
+
+### Pipeline (fallback)
+
+| Table | Notes |
+|-------|-------|
+| `processing_pipeline_results` | Raw weight pipeline KV output. Dynamic schema. Prefer `weight_reports` instead. |
+
+---
+
+## KEY RELATIONSHIPS
+
+```
+livestock ──── weight_record          (livestock_uuid → livestock.uuid)
+    │
+    ├──── note_record                 (livestock_uuid → livestock.uuid)
+    ├──── epds                        (livestock_uuid → livestock.uuid)
+    ├──── [all record tables]         (livestock_uuid → livestock.uuid)
+    │
+    ├──── "group"                     (livestock.group_uuid → group.uuid)
+    └──── land                        (livestock.land_uuid → land.uuid)
+
+cameras ──── confirmed_events         (cameras.name = confirmed_events.camera_name)
+    │
+    ├──── weight_reports              (cameras.name = weight_reports.camera_name)
+    ├──── camera_configs              (cameras.name = camera_configs.camera_name)
+    ├──── camera_videos               (cameras.uuid = camera_videos.camera_uuid)
+    └──── land_cameras                (cameras.uuid = land_cameras.camera_uuid)
+```
+
+**Two data worlds:**
+- **Livestock world** — joins on `livestock_uuid` (individual animals)
+- **Camera world** — joins on `camera_name` (pens/locations, ML data)
+
+These worlds connect through `group` and `land` (a camera watches a pen, a pen
+has a group of animals) — but this mapping is still in progress.
 
 ---
 
@@ -148,8 +419,8 @@ All have `livestock_uuid`, `is_deleted` (INTEGER 0/1), and a date column.
 | `SAFE_DIVIDE(a, b)` | `CASE WHEN b = 0 THEN NULL ELSE a * 1.0 / b END` |
 | `is_deleted = false` | `is_deleted = 0` |
 | `is_deleted = true` | `is_deleted = 1` |
-| `ROUND(val, n)` | `ROUND(val, n)` ✓ same |
-| `COALESCE(a, b)` | `COALESCE(a, b)` ✓ same |
+| `ROUND(val, n)` | `ROUND(val, n)` (same) |
+| `COALESCE(a, b)` | `COALESCE(a, b)` (same) |
 
 ---
 
@@ -209,88 +480,66 @@ GROUP BY CAST(score AS INTEGER)
 ORDER BY bcs_score
 ```
 
-### Video events — query, URL lookup, and response format
-
-#### ⚠️ CRITICAL — which URL to use
-
-`video_events` has a `video_uri` column. **NEVER use it.** It is an internal `gs://` GCS path, not a playable URL.
-
-The correct URL is **`camera_videos.video_url`** — an HTTPS link to the actual recording.
-
-You reach it by joining:
-```
-video_events.video_uuid  →  camera_videos.uuid  →  camera_videos.video_url
-```
-
-That is the only URL you will ever shorten and show to the user.
-
-#### Query
+### Confirmed events — recent detections
 
 ```sql
 SELECT
-  ve.event_type,
-  ve.event_date,
-  datetime(ve.start_timestamp, 'unixepoch') AS event_time,
-  ve.confidence,
-  COALESCE(c.display_name, c.name) AS camera_name,
-  cv.video_url
-FROM video_events ve
-JOIN camera_videos cv ON cv.uuid = ve.video_uuid AND cv.is_deleted = 0
-LEFT JOIN cameras c ON c.uuid = cv.camera_uuid AND c.is_deleted = 0
-WHERE ve.is_deleted = 0
-ORDER BY ve.event_date DESC, ve.start_timestamp DESC
+  ce.event_type,
+  ce.date_str AS event_date,
+  ce.confidence,
+  ce.severity,
+  ce.description,
+  ce.decision,
+  COALESCE(c.display_name, c.name) AS camera_name
+FROM confirmed_events ce
+LEFT JOIN cameras c ON c.name = ce.camera_name AND c.is_deleted = 0
+ORDER BY ce.date_str DESC, ce.created_at DESC
 LIMIT 20
 ```
 
-Filter by event type when asked (e.g. distress, calving, FEED_WATER_ACCESS):
+Filter by type: `AND ce.event_type = 'health'`
+Filter by date: `AND ce.date_str >= date('now', '-7 days')`
+Filter by severity: `AND ce.severity = 'high'`
+
+**Show `description` to the user** — it's a human-readable summary.
+Use `reasoning` for follow-up detail if the user asks "why?"
+
+### Pen weight trend (weight_reports)
+
 ```sql
-AND ve.event_type = 'distress'
+SELECT
+  wr."Date" AS report_date,
+  COALESCE(c.display_name, c.name) AS camera_name,
+  wr.Weight_Trend_Fit AS predicted_weight,
+  wr.Pen_Median_RW5 AS smoothed_weight,
+  wr.Estimated_Pen_ADG AS adg
+FROM weight_reports wr
+LEFT JOIN cameras c ON c.name = wr.camera_name AND c.is_deleted = 0
+ORDER BY wr."Date" DESC
+LIMIT 30
 ```
 
-Filter by date range when asked:
+**Show `Weight_Trend_Fit` as the primary weight** — label it as "estimated weight"
+or "predicted weight." Use `Pen_Median_RW5` as supporting context.
+
+### Pen weight over time (for charts)
+
 ```sql
-AND ve.event_date >= date('now', '-7 days')
+SELECT
+  wr."Date" AS report_date,
+  COALESCE(c.display_name, c.name) AS pen,
+  wr.Weight_Trend_Fit AS weight,
+  wr.Estimated_Pen_ADG AS adg
+FROM weight_reports wr
+LEFT JOIN cameras c ON c.name = wr.camera_name AND c.is_deleted = 0
+WHERE wr."Date" >= date('now', '-30 days')
+ORDER BY wr.camera_name, wr."Date"
 ```
-
-#### Response format — NON-NEGOTIABLE
-
-For every event in the result:
-
-1. Read `cv.video_url` from the row
-2. Run: `/data/workspace/skills/shorten/shorten.sh "<cv.video_url>"`
-3. Use the shortened result as the link — if shortening fails, use the raw `cv.video_url`
-4. Output one block per event:
-
-```
-<event_type (human readable)> — <camera_name> — <event_date> at <event_time> (<confidence>%)
-<shortened cv.video_url>
-```
-
-Example output (iMessage — plain text):
-```
-Distress detected — Pen 120 — March 27 at 2:14 PM (91%)
-https://is.gd/xK92mA
-
-Feed & water access — Pen 140 — March 27 at 6:03 AM (87%)
-https://is.gd/pL44nQ
-```
-
-Example output (Slack/Discord — markdown):
-```
-*Distress detected* — Pen 120 — March 27 at 2:14 PM (91%)
-https://is.gd/xK92mA
-
-*Feed & water access* — Pen 140 — March 27 at 6:03 AM (87%)
-https://is.gd/pL44nQ
-```
-
-- Every event gets a link. No event is shown without its video URL.
-- The link is always from `camera_videos.video_url`. Never from `video_events.video_uri` or any other field.
 
 ### Check last sync time
 
 ```sql
-SELECT table_name, last_sync_at, row_count, error
+SELECT table_name, source, last_sync_at, row_count, error
 FROM _sync_meta
 ORDER BY last_sync_at DESC
 ```
@@ -310,11 +559,12 @@ WHERE l.is_deleted = 0 AND w.is_deleted = 0
 WHERE l.is_deleted = 0
 ```
 
-Tables WITHOUT `is_deleted` (no filter needed): `ranch`, `vaccinations`,
-`treatments`, `measurements`, `carcass_data`, `breedings`, `breed_compositions`,
-`ownerships`, `gain_tests`, `contacts`, `equipment`, `tanks`, `semen`,
-`categories`, `expenses`, `income`, `rainfall`, `events`, `ranch_settings`,
-`prediction_results`.
+**Tables WITHOUT `is_deleted`** (no filter needed): `ranch`, `confirmed_events`,
+`weight_reports`, `camera_configs`, `orch_configs`, `processing_pipeline_results`,
+`vaccinations`, `treatments`, `measurements`, `carcass_data`, `breedings`,
+`breed_compositions`, `ownerships`, `gain_tests`, `contacts`, `equipment`,
+`tanks`, `semen`, `categories`, `expenses`, `income`, `rainfall`, `events`,
+`ranch_settings`, `prediction_results`, `epds`.
 
 ---
 

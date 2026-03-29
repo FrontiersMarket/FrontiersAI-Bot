@@ -1,103 +1,90 @@
 /**
- * db-sync.js — BigQuery → SQLite sync service
+ * db-sync.js — BigQuery → SQLite sync service (multi-dataset)
  *
- * Pulls all ranch-scoped data from BigQuery `frontiersmarketplace.public` and
- * stores it in a local SQLite database at RANCH_DB_PATH. Runs on a schedule
- * (default: every 5 minutes). The bot queries SQLite via the local-db skill
- * instead of BigQuery directly.
+ * Pulls ranch-scoped data from multiple BigQuery datasets and stores it in a
+ * local SQLite database at RANCH_DB_PATH. Runs on a schedule (default: every
+ * 5 minutes). The bot queries SQLite via the local-db skill instead of
+ * BigQuery directly.
+ *
+ * Table definitions and dataset sources are driven by config/sync-tables.json.
  */
 
 import Database from "better-sqlite3";
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-const PROJECT_ID = "frontiersmarketplace";
-const DATASET = "public";
-const BQ_LOCATION = "us-central1";
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
 const SYNC_INTERVAL_MS = parseInt(
   process.env.DB_SYNC_INTERVAL_MS ?? "300000",
   10
 );
 
-// ── Table definitions ────────────────────────────────────────────────────────
+// ── Config loader ────────────────────────────────────────────────────────────
 
-const LIVESTOCK_SUB = (uuid) =>
-  `livestock_uuid IN (SELECT uuid FROM \`${PROJECT_ID}.${DATASET}.livestock\` WHERE ranch_uuid = '${uuid}')`;
+const CONFIG_PATH = path.resolve(__dirname, "..", "config", "sync-tables.json");
 
-const CAMERA_SUB = (uuid) =>
-  `camera_uuid IN (SELECT uuid FROM \`${PROJECT_ID}.${DATASET}.cameras\` WHERE ranch_uuid = '${uuid}')`;
+function loadSyncConfig() {
+  const raw = fs.readFileSync(CONFIG_PATH, "utf8");
+  const config = JSON.parse(raw);
 
-const VIDEO_SUB = (uuid) =>
-  `video_uuid IN (SELECT uuid FROM \`${PROJECT_ID}.${DATASET}.camera_videos\` WHERE camera_uuid IN (SELECT uuid FROM \`${PROJECT_ID}.${DATASET}.cameras\` WHERE ranch_uuid = '${uuid}'))`;
+  if (!config.sources || !config.tables) {
+    throw new Error("sync-tables.json must have 'sources' and 'tables' keys");
+  }
 
-const TABLES = [
-  // Core ranch entity
-  { name: "ranch", filter: (uuid) => `uuid = '${uuid}'` },
-  // Direct ranch_uuid tables
-  { name: "livestock", filter: (uuid) => `ranch_uuid = '${uuid}'` },
-  { name: "group", filter: (uuid) => `ranch_uuid = '${uuid}'` },
-  { name: "land", filter: (uuid) => `ranch_uuid = '${uuid}'` },
-  { name: "cameras", filter: (uuid) => `ranch_uuid = '${uuid}'` },
-  { name: "contacts", filter: (uuid) => `ranch_uuid = '${uuid}'` },
-  { name: "rainfall", filter: (uuid) => `ranch_uuid = '${uuid}'` },
-  { name: "events", filter: (uuid) => `ranch_uuid = '${uuid}'` },
-  { name: "equipment", filter: (uuid) => `ranch_uuid = '${uuid}'` },
-  { name: "tanks", filter: (uuid) => `ranch_uuid = '${uuid}'` },
-  { name: "semen", filter: (uuid) => `ranch_uuid = '${uuid}'` },
-  { name: "categories", filter: (uuid) => `ranch_uuid = '${uuid}'` },
-  { name: "expenses", filter: (uuid) => `ranch_uuid = '${uuid}'` },
-  { name: "income", filter: (uuid) => `ranch_uuid = '${uuid}'` },
-  { name: "ranch_settings", filter: (uuid) => `ranch_uuid = '${uuid}'` },
-  { name: "ranch_association", filter: (uuid) => `ranch_uuid = '${uuid}'` },
-  { name: "salesbook", filter: (uuid) => `ranch_uuid = '${uuid}'` },
-  { name: "prediction_results", filter: (uuid) => `ranch_uuid = '${uuid}'` },
-  {
-    name: "unverified_weight_records",
-    filter: (uuid) => `ranch_uuid = '${uuid}'`,
-  },
-  // Record tables (livestock-scoped)
-  { name: "weight_record", filter: LIVESTOCK_SUB },
-  { name: "bcs_record", filter: LIVESTOCK_SUB },
-  { name: "vaccination_record", filter: LIVESTOCK_SUB },
-  { name: "note_record", filter: LIVESTOCK_SUB },
-  { name: "calving_record", filter: LIVESTOCK_SUB },
-  { name: "death_record", filter: LIVESTOCK_SUB },
-  { name: "pregnancy_check_record", filter: LIVESTOCK_SUB },
-  { name: "transfer_record", filter: LIVESTOCK_SUB },
-  { name: "harvest_record", filter: LIVESTOCK_SUB },
-  { name: "breeding_serv_record", filter: LIVESTOCK_SUB },
-  { name: "transaction_record", filter: LIVESTOCK_SUB },
-  { name: "doctoring_record", filter: LIVESTOCK_SUB },
-  { name: "foot_score_record", filter: LIVESTOCK_SUB },
-  { name: "implant_record", filter: LIVESTOCK_SUB },
-  { name: "udder_teat_record", filter: LIVESTOCK_SUB },
-  { name: "ear_tag_record", filter: LIVESTOCK_SUB },
-  { name: "worming_record", filter: LIVESTOCK_SUB },
-  { name: "culling_record", filter: LIVESTOCK_SUB },
-  { name: "horning_record", filter: LIVESTOCK_SUB },
-  { name: "heat_detect_record", filter: LIVESTOCK_SUB },
-  { name: "transport_record", filter: LIVESTOCK_SUB },
-  { name: "consign_record", filter: LIVESTOCK_SUB },
-  { name: "exam_record", filter: LIVESTOCK_SUB },
-  { name: "perm_record", filter: LIVESTOCK_SUB },
-  // Advanced livestock tables
-  { name: "vaccinations", filter: LIVESTOCK_SUB },
-  { name: "treatments", filter: LIVESTOCK_SUB },
-  { name: "epds", filter: LIVESTOCK_SUB },
-  { name: "gain_tests", filter: LIVESTOCK_SUB },
-  { name: "measurements", filter: LIVESTOCK_SUB },
-  { name: "carcass_data", filter: LIVESTOCK_SUB },
-  { name: "breedings", filter: LIVESTOCK_SUB },
-  { name: "breed_compositions", filter: LIVESTOCK_SUB },
-  { name: "ownerships", filter: LIVESTOCK_SUB },
-  { name: "gallery_item", filter: LIVESTOCK_SUB },
-  // Camera-scoped tables
-  { name: "camera_videos", filter: CAMERA_SUB },
-  { name: "land_cameras", filter: CAMERA_SUB },
-  { name: "camera_reports", filter: CAMERA_SUB },
-  // Video-scoped tables
-  { name: "video_events", filter: VIDEO_SUB },
-];
+  return config;
+}
+
+// ── Filter builders ──────────────────────────────────────────────────────────
+// Each filter type is a function (ranchUuid, source) → WHERE clause string.
+// `source` has { project, dataset } for cross-dataset subquery references.
+// The "public" source is always used for core lookup tables (livestock, cameras).
+
+function buildFilterFn(filterType, sources) {
+  const pub = sources.public;
+  if (!pub) throw new Error("sync config must include a 'public' source");
+
+  const fqPublic = (table) => `\`${pub.project}.${pub.dataset}.${table}\``;
+
+  switch (filterType) {
+    case "ranch_uuid":
+      return (uuid) => `ranch_uuid = '${uuid}'`;
+
+    case "ranch_uuid_is_uuid":
+      return (uuid) => `uuid = '${uuid}'`;
+
+    case "livestock_sub":
+      return (uuid) =>
+        `livestock_uuid IN (SELECT uuid FROM ${fqPublic("livestock")} WHERE ranch_uuid = '${uuid}')`;
+
+    case "camera_sub":
+      return (uuid) =>
+        `camera_uuid IN (SELECT uuid FROM ${fqPublic("cameras")} WHERE ranch_uuid = '${uuid}')`;
+
+    case "video_sub":
+      return (uuid) =>
+        `video_uuid IN (SELECT uuid FROM ${fqPublic("camera_videos")} WHERE camera_uuid IN (SELECT uuid FROM ${fqPublic("cameras")} WHERE ranch_uuid = '${uuid}'))`;
+
+    case "camera_name_sub":
+      return (uuid) =>
+        `camera_name IN (SELECT name FROM ${fqPublic("cameras")} WHERE ranch_uuid = '${uuid}')`;
+
+    default:
+      throw new Error(`Unknown filter type: ${filterType}`);
+  }
+}
+
+// ── Priority ordering ────────────────────────────────────────────────────────
+
+const PRIORITY_ORDER = { high: 0, medium: 1, low: 2 };
+
+function sortByPriority(tables) {
+  return [...tables].sort(
+    (a, b) =>
+      (PRIORITY_ORDER[a.priority] ?? 2) - (PRIORITY_ORDER[b.priority] ?? 2)
+  );
+}
 
 // ── Type helpers ─────────────────────────────────────────────────────────────
 
@@ -203,35 +190,38 @@ let bigquery = null;
  * Query INFORMATION_SCHEMA to get column definitions for a table.
  * Returns array of { column_name, data_type } objects.
  */
-async function getTableSchema(tableName) {
+async function getTableSchema(tableName, source) {
   const query = `
     SELECT column_name, data_type
-    FROM \`${PROJECT_ID}.${DATASET}\`.INFORMATION_SCHEMA.COLUMNS
+    FROM \`${source.project}.${source.dataset}\`.INFORMATION_SCHEMA.COLUMNS
     WHERE table_name = '${tableName}'
     ORDER BY ordinal_position
   `;
-  const [rows] = await bigquery.query({ query, location: BQ_LOCATION });
+  const [rows] = await bigquery.query({ query, location: source.location });
   return rows;
 }
 
 /**
  * Sync one table: query BQ, create SQLite table if needed, replace all rows.
  */
-async function syncTable(db, tableName, ranchUuid) {
-  const filterFn = TABLES.find((t) => t.name === tableName)?.filter;
-  if (!filterFn) throw new Error(`No filter defined for table: ${tableName}`);
+async function syncTable(db, tableConfig, ranchUuid, sources) {
+  const { name, source: sourceKey, filter: filterType } = tableConfig;
+  const source = sources[sourceKey];
+  if (!source) throw new Error(`Unknown source '${sourceKey}' for table '${name}'`);
+
+  const filterFn = buildFilterFn(filterType, sources);
 
   // 1. Get schema
-  const schema = await getTableSchema(tableName);
+  const schema = await getTableSchema(name, source);
   if (schema.length === 0) {
-    console.log(`[db-sync] skipping ${tableName} — no columns in schema`);
+    console.log(`[db-sync] skipping ${name} — no columns in schema`);
     return 0;
   }
 
   // Filter out STRUCT/RECORD columns (datastream_metadata, etc.)
   const cols = schema.filter((c) => bqTypeToSQLite(c.data_type) !== null);
   if (cols.length === 0) {
-    console.log(`[db-sync] skipping ${tableName} — no mappable columns`);
+    console.log(`[db-sync] skipping ${name} — no mappable columns`);
     return 0;
   }
 
@@ -239,30 +229,30 @@ async function syncTable(db, tableName, ranchUuid) {
   const colDefs = cols
     .map((c) => `"${c.column_name}" ${bqTypeToSQLite(c.data_type)}`)
     .join(", ");
-  db.prepare(`CREATE TABLE IF NOT EXISTS "${tableName}" (${colDefs})`).run();
+  db.prepare(`CREATE TABLE IF NOT EXISTS "${name}" (${colDefs})`).run();
 
   // 3. Query BQ for ranch-scoped rows
   const whereClause = filterFn(ranchUuid);
   const columnList = cols.map((c) => `\`${c.column_name}\``).join(", ");
   const bqQuery = `
     SELECT ${columnList}
-    FROM \`${PROJECT_ID}.${DATASET}.${tableName}\`
+    FROM \`${source.project}.${source.dataset}.${name}\`
     WHERE ${whereClause}
   `;
 
   const [rows] = await bigquery.query({
     query: bqQuery,
-    location: BQ_LOCATION,
+    location: source.location,
     // Increase max for large ranches; BQ Node client pages automatically
     maxResults: 100000,
   });
 
   // 4. Replace table contents atomically
   const placeholders = cols.map(() => "?").join(", ");
-  const insertSql = `INSERT INTO "${tableName}" (${cols.map((c) => `"${c.column_name}"`).join(", ")}) VALUES (${placeholders})`;
+  const insertSql = `INSERT INTO "${name}" (${cols.map((c) => `"${c.column_name}"`).join(", ")}) VALUES (${placeholders})`;
 
   const replaceAll = db.transaction((bqRows) => {
-    db.prepare(`DELETE FROM "${tableName}"`).run();
+    db.prepare(`DELETE FROM "${name}"`).run();
     const stmt = db.prepare(insertSql);
     for (const row of bqRows) {
       const values = cols.map((c) =>
@@ -283,6 +273,7 @@ function ensureSyncMeta(db) {
   db.prepare(`
     CREATE TABLE IF NOT EXISTS _sync_meta (
       table_name TEXT PRIMARY KEY,
+      source TEXT,
       last_sync_at TEXT,
       row_count INTEGER,
       error TEXT
@@ -304,6 +295,26 @@ export async function runSync(ranchUuid, dbPath) {
   const startedAt = new Date().toISOString();
   console.log(`[db-sync] starting full sync for ranch ${ranchUuid}`);
 
+  let config;
+  try {
+    config = loadSyncConfig();
+  } catch (err) {
+    syncState.running = false;
+    syncState.lastSyncError = `Failed to load sync config: ${err.message}`;
+    console.error(`[db-sync] ${syncState.lastSyncError}`);
+    return;
+  }
+
+  const { sources, tables } = config;
+  const enabledTables = tables.filter((t) => t.enabled !== false);
+  const sorted = sortByPriority(enabledTables);
+
+  console.log(
+    `[db-sync] ${sorted.length} tables enabled (${enabledTables.filter((t) => t.priority === "high").length} high, ` +
+    `${enabledTables.filter((t) => t.priority === "medium").length} medium, ` +
+    `${enabledTables.filter((t) => t.priority === "low").length} low)`
+  );
+
   const db = new Database(dbPath);
   // WAL mode for better concurrent read performance
   db.pragma("journal_mode = WAL");
@@ -312,19 +323,20 @@ export async function runSync(ranchUuid, dbPath) {
   try {
     ensureSyncMeta(db);
 
-    for (const tableConfig of TABLES) {
-      const { name } = tableConfig;
+    for (const tableConfig of sorted) {
+      const { name, source: sourceKey } = tableConfig;
       try {
-        const rowCount = await syncTable(db, name, ranchUuid);
-        console.log(`[db-sync] ${name}: ${rowCount} rows`);
+        const rowCount = await syncTable(db, tableConfig, ranchUuid, sources);
+        console.log(`[db-sync] ${sourceKey}.${name}: ${rowCount} rows`);
 
         db.prepare(`
-          INSERT OR REPLACE INTO _sync_meta (table_name, last_sync_at, row_count, error)
-          VALUES (?, ?, ?, NULL)
-        `).run(name, new Date().toISOString(), rowCount);
+          INSERT OR REPLACE INTO _sync_meta (table_name, source, last_sync_at, row_count, error)
+          VALUES (?, ?, ?, ?, NULL)
+        `).run(name, sourceKey, new Date().toISOString(), rowCount);
 
         syncState.tables[name] = {
           rows: rowCount,
+          source: sourceKey,
           syncedAt: new Date().toISOString(),
           error: null,
         };
@@ -336,17 +348,17 @@ export async function runSync(ranchUuid, dbPath) {
           msg.includes("not found") ||
           msg.includes("does not exist")
         ) {
-          console.log(`[db-sync] ${name}: table not found in BQ, skipping`);
+          console.log(`[db-sync] ${sourceKey}.${name}: table not found in BQ, skipping`);
         } else {
-          console.warn(`[db-sync] ${name}: error — ${msg}`);
+          console.warn(`[db-sync] ${sourceKey}.${name}: error — ${msg}`);
         }
 
         db.prepare(`
-          INSERT OR REPLACE INTO _sync_meta (table_name, last_sync_at, row_count, error)
-          VALUES (?, ?, 0, ?)
-        `).run(name, new Date().toISOString(), msg.slice(0, 500));
+          INSERT OR REPLACE INTO _sync_meta (table_name, source, last_sync_at, row_count, error)
+          VALUES (?, ?, ?, 0, ?)
+        `).run(name, sourceKey, new Date().toISOString(), msg.slice(0, 500));
 
-        syncState.tables[name] = { rows: 0, syncedAt: new Date().toISOString(), error: msg };
+        syncState.tables[name] = { rows: 0, source: sourceKey, syncedAt: new Date().toISOString(), error: msg };
       }
     }
 
@@ -388,13 +400,14 @@ export function initSync(ranchUuid, dbPath) {
   // Lazy-load BigQuery to avoid import-time errors when credentials are missing
   import("@google-cloud/bigquery")
     .then(({ BigQuery }) => {
-      bigquery = new BigQuery({ projectId: PROJECT_ID });
+      bigquery = new BigQuery({ projectId: "frontiersmarketplace" });
       syncState.initialized = true;
 
       fs.mkdirSync(path.dirname(dbPath), { recursive: true });
 
       console.log(`[db-sync] initialized — ranch=${ranchUuid} db=${dbPath}`);
       console.log(`[db-sync] sync interval: ${SYNC_INTERVAL_MS / 1000}s`);
+      console.log(`[db-sync] config: ${CONFIG_PATH}`);
 
       // Run first sync immediately
       runSync(ranchUuid, dbPath).catch((err) => {
