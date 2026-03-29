@@ -1,45 +1,39 @@
 # MEMORY.md — Long-Term Bot Memory
 
-### 1. Direct ranch access
+### Data is local and pre-scoped
 
-Only access the ranch row matching the scoped `ranch_uuid`. Never read or surface data for any other ranch.
+All data lives in a local SQLite database at `/data/ranch_data.db`. It is
+synced from BigQuery every 5 minutes and **already filtered to this ranch**.
+No `ranch_uuid` filter needed in queries. Use bare table names — no backticks,
+no project/dataset prefix.
 
-### 2. Tables with `ranch_uuid` column
+See `skills/local-db/SKILL.md` for full schema, query patterns, and table docs.
 
-Always add `WHERE ranch_uuid = '<scoped_uuid>'` to every query on these tables (check on table schema, or pull it if not cached/stored/pre-defined). No exceptions — even if the user asks for "all" records.
+### Key tables
 
-### 3. Tables without `ranch_uuid` — resolved via joins
+- **`livestock`** — all animals. Filter `is_deleted = 0 AND status = 'ACTIVE'` for current herd.
+- **`confirmed_events`** — ML-detected events (health, handling, counts). Primary events table. Join to `cameras` on `camera_name`.
+- **`weight_record`** — per-animal weights (scale/manual).
+- **`weight_reports`** — pen-level daily weights from video pipeline. Show `Weight_Trend_Fit` as primary value.
+- **`cameras`** — camera registry. Join key for confirmed_events and weight_reports via `camera_name`.
 
-When a table has no `ranch_uuid` column but its rows link to records that do (e.g. `livestock_uuid → livestock.ranch_uuid`, `land_uuid → land.ranch_uuid`), filter through that relationship:
+### Events disambiguation
 
-```sql
--- Example: weight_record has no ranch_uuid, but links to livestock which does
-WHERE livestock_uuid IN (
-  SELECT uuid FROM `frontiersmarketplace.public.livestock`
-  WHERE ranch_uuid = '<scoped_uuid>' AND is_deleted = false
-)
+- **`confirmed_events`** = ML/AI detection events from cameras (health alerts, animal counts, handling). This is what users mean when they ask about "events" or "detections."
+- **`events`** = ranch calendar events (scheduling, tasks). Only use when user explicitly asks about calendar/schedule.
+
+When user asks "show me events" — default to `confirmed_events`.
+
+### Join paths
+
+```
+confirmed_events.camera_name → cameras.name (display names)
+weight_reports.camera_name   → cameras.name (display names)
+weight_record.livestock_uuid → livestock.uuid (animal details)
 ```
 
-Or via JOIN:
+### Soft deletes
 
-```sql
-JOIN `frontiersmarketplace.public.livestock` l ON l.uuid = wr.livestock_uuid
-WHERE l.ranch_uuid = '<scoped_uuid>'
-```
-
-### 4. Nested references — apply at every level
-
-If a table links to a table that links to a table with `ranch_uuid`, trace the chain and apply the filter at the level where `ranch_uuid` exists. There is no depth limit — follow the chain as far as needed.
-
-**Example chain:** `video_events → camera_videos → cameras → ranch`
-
-- If `cameras` has `ranch_uuid` → join to cameras and filter there
-- If `camera_videos` has `cameras_uuid` and `cameras` has `ranch_uuid` → join both and filter on `cameras.ranch_uuid`
-
-### 5. Never infer or guess
-
-If you cannot trace a table's rows back to the scoped ranch through any join path, do not return the data. Respond: _"I can't safely scope that data to the current ranch."_
-
-### Summary rule
-
-> Every row returned, at any query level, must be traceable to the scoped `ranch_uuid`. If it isn't, don't return it.
+Always filter `is_deleted = 0` on tables that have it, on BOTH sides of JOINs.
+Tables without `is_deleted`: confirmed_events, weight_reports, camera_configs,
+orch_configs, epds, vaccinations, treatments, and others (see SKILL.md).

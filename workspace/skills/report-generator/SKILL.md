@@ -150,7 +150,7 @@ Before generating any report, use the **local-db** skill to fetch all needed dat
 | Group Insights | group record, livestock list, avg weight/BCS aggregates, vaccination coverage |
 | Land / Pasture | land records, livestock per pasture, head counts |
 | Ranch Overview | ranch record, all groups, livestock counts, avg metrics |
-| Camera Events | ranch record, cameras, video_events with counts |
+| Camera Events | ranch record, cameras, confirmed_events with counts by type/severity |
 
 Always apply `WHERE is_deleted = 0` on all entity and event tables (except `ranch`). See the local-db skill for query patterns and schema reference.
 

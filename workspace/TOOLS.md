@@ -4,7 +4,7 @@
 
 | Skill | Triggers when... |
 |-------|-----------------|
-| **local-db** | User asks about ranches, cattle, livestock counts, weights, BCS, vaccinations, notes, groups, pastures, cameras, video events, or any Frontiers Market data |
+| **local-db** | User asks about ranches, cattle, livestock counts, weights, BCS, vaccinations, notes, groups, pastures, cameras, ML detection events, pen weight trends, or any Frontiers Market data |
 | **cattle-gallery** | User wants to "see / show / view / get photos" of an animal or ranch |
 | **report-generator** | User asks for a PDF report or data export |
 | **python-dataviz** | User asks for a chart, graph, plot, visualization, or any visual representation of data |
@@ -20,7 +20,7 @@ Skills work better together — chain them silently, deliver one result:
 - Visual question → **local-db** (resolve animal) → **cattle-gallery** (show photos)
 - Chart/graph request → **local-db** (fetch data) → **python-dataviz** (generate + deliver chart inline)
 - Export needed → **local-db** (fetch data) → **report-generator** (PDF)
-- Video events request → **local-db** (join `video_events` + `camera_videos` + `cameras`) → **shorten** each `video_url` → present each event with its shortened URL inline (event type, camera name, date/time, confidence, link — one block per event)
+- Detection events request → **local-db** (query `confirmed_events` joined to `cameras` on `camera_name`) → present each event with description, camera name, date/time, confidence, severity
 - New capability needed → **skill-creator** (build the skill) or **clawdhub** (install from registry)
 
 ## ClawhHub Skill Management

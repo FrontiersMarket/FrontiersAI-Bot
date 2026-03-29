@@ -38,7 +38,7 @@ fi
 
 ## When to use
 
-- **Always** — any `video_url` from `camera_videos` must be shortened before sharing
+- **Always** — any video URL must be shortened before sharing
 - **Always** — any long URL shared with the user in chat should be shortened
 - Never present raw long URLs when a short version can be obtained
 
