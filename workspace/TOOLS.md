@@ -10,6 +10,7 @@
 | **python-dataviz** | User asks for a chart, graph, plot, visualization, or any visual representation of data |
 | **shorten** | ALWAYS use before sharing any URL — mandatory for video URLs, recommended for any long URL |
 | **skill-creator** | User wants to create a new skill or extend existing capabilities |
+| **file-reader** | User uploads an XLSX, DOCX, or CSV file and wants to discuss its contents. NOT for PDFs (native) or images (native) |
 | **clawdhub** | User asks to search, browse, install, update, or publish skills from ClawhHub — always available from startup |
 
 ## Cross-Skill Chaining

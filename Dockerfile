@@ -29,6 +29,7 @@ RUN npm install -g openclaw@2026.3.8
 RUN python3 -m venv /opt/dataviz-venv \
   && /opt/dataviz-venv/bin/pip install --quiet --no-cache-dir \
        matplotlib seaborn plotly pandas numpy 'kaleido==0.2.1' \
+       openpyxl python-docx \
   && chmod -R a+rX /opt/dataviz-venv
 
 WORKDIR /app
