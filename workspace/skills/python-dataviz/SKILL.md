@@ -1,6 +1,10 @@
 ---
 name: python-dataviz
-description: Generate charts and visualizations using Python + plotly. Use when user asks for chart, graph, plot, or visualization.
+description: >
+  Generate charts and visualizations using Python + plotly. Use when user asks
+  for a chart, graph, plot, or visualization — AND proactively when the data
+  would be better understood visually (weight trends, distributions, comparisons,
+  time series).
 ---
 
 # Python Data Visualization
@@ -16,6 +20,38 @@ description: Generate charts and visualizations using Python + plotly. Use when 
 Available packages in the venv: `plotly`, `kaleido==0.2.1`, `pandas`, `numpy`, `matplotlib`, `seaborn`.
 
 **kaleido 0.2.1 is self-contained** (no Chrome needed). Do NOT upgrade it — kaleido 1.x requires Chromium which is NOT installed.
+
+---
+
+## When to Generate a Chart
+
+### Always generate (user asked)
+Any request containing "chart", "graph", "plot", "visualize", "show me a chart", etc.
+
+### Proactively generate (user didn't ask, but a visual tells the story better)
+
+Attach a chart alongside your text answer when the query result fits any of these patterns:
+
+| Data pattern | Chart type | Example query |
+|---|---|---|
+| Weights over time (animal, pen, or group) | Line chart | "How has pen 3 been gaining?" |
+| Comparison across groups, pens, or categories | Grouped bar | "How do the yearling groups compare?" |
+| Distribution of a metric (weights, BCS, ages) | Histogram or box plot | "What do weights look like across the herd?" |
+| Composition / share breakdown | Pie or horizontal bar | "What's the breed makeup?" |
+| Event counts over time | Bar (x = date) | "How many detections this week?" |
+| Ranking / top-N | Horizontal bar | "Which pens gained the most?" |
+| Any numeric result with 5+ data points | Best-fit chart | "Show me all group weights" |
+
+### Do NOT auto-generate when
+- The answer is a single number, date, or short list (< 5 items)
+- The user is asking a yes/no or lookup question ("What group is #432 in?")
+- The user explicitly says "no chart" or "just the numbers"
+
+### How to attach proactively
+1. Query the data via local-db as you normally would
+2. Answer the question in text first (keep it brief)
+3. Generate and deliver the chart in the **same exec call** — do not send the text message before the chart is uploaded
+4. Caption the chart naturally: "Here's that as a chart too" or weave it in
 
 ---
 

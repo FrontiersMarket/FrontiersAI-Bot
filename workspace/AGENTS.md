@@ -86,9 +86,10 @@ Skills can and should invoke each other when it serves the user better:
 
 - **local-db** → fetch data → **report-generator** → export as PDF
 - **local-db** → look up animal → **cattle-gallery** → show photos
+- **local-db** → fetch data → **python-dataviz** → generate chart *(do this proactively when the data has a clear visual story — see python-dataviz SKILL.md for triggers)*
 - Any gap in capability → **skill-creator** → build a new skill
 
-When a user's request spans multiple skills, chain them silently and deliver one final result. See `TOOLS.md` for the full skills list.
+When a user's request spans multiple skills, chain them silently and deliver one final result. Proactive chaining (especially data → chart) is encouraged — don't wait to be asked if a chart would clearly help. See `TOOLS.md` for the full skills list.
 
 ## Creating New Skills
 
