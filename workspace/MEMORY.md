@@ -17,13 +17,6 @@ See `skills/local-db/SKILL.md` for full schema, query patterns, and table docs.
 - **`weight_reports`** — pen-level daily weights from video pipeline. Show `Weight_Trend_Fit` as primary value.
 - **`cameras`** — camera registry. Join key for confirmed_events and weight_reports via `camera_name`.
 
-### Events disambiguation
-
-- **`confirmed_events`** = ML/AI detection events from cameras (health alerts, animal counts, handling). This is what users mean when they ask about "events" or "detections."
-- **`events`** = ranch calendar events (scheduling, tasks). Only use when user explicitly asks about calendar/schedule.
-
-When user asks "show me events" — default to `confirmed_events`.
-
 ### Join paths
 
 ```
