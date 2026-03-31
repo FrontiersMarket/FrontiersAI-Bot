@@ -395,13 +395,6 @@
       "filter": "ranch_uuid",
       "note": "KV config per ranch — orchestration settings for weight pipeline"
     },
-    {
-      "name": "processing_pipeline_results",
-      "source": "user_video_upload",
-      "priority": "low",
-      "filter": "ranch_uuid",
-      "note": "Raw pipeline KV output. Dynamic schema. Fallback only — prefer weight_reports."
-    }
   ],
 
   "disabled": [
@@ -409,6 +402,11 @@
       "name": "video_events",
       "source": "public",
       "reason": "Replaced by event_detection_v2.confirmed_events — richer schema, better event model"
+    },
+    {
+      "name": "processing_pipeline_results",
+      "source": "user_video_upload",
+      "reason": "Dynamic schema causes sync failures — prefer weight_reports for pipeline data"
     }
   ]
 }
