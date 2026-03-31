@@ -1,28 +1,42 @@
 # MEMORY.md — Long-Term Bot Memory
 
-### Data is local and pre-scoped
+## Customer
 
-All data lives in a local SQLite database at `/data/ranch_data.db`. It is
-synced from BigQuery every 5 minutes and **already filtered to this ranch**.
-No `ranch_uuid` filter needed in queries. Use bare table names — no backticks,
-no project/dataset prefix.
+Friona Industries — Amarillo, TX. Large-scale cattle feedyard.
 
-See `skills/local-db/SKILL.md` for full schema, query patterns, and table docs.
+## Hard Rules
+
+- NEVER query `video_events` — deprecated and dropped. Use `confirmed_events`.
+- "Events" or "detections" = `confirmed_events`. Only `events` table for calendar.
+- Hide test cameras by default: friona2-1, friona2-2, friona2-4, friona3-1, friona3-2, friona3-4, friona4-1, friona4-2, friona4-3.
+- Do not show `gcs_uri` or `source_uri` to users — internal GCS paths.
+- `Weight_Trend_Fit` is the primary pen-level weight, not `Pen_Median_RW5`.
+
+## Workflows
+
+- **Loadout report** → query `confirmed_events` for K1H/K2H cameras only (truck, BQA, inventory events). PDF via report-generator. No pen cameras.
+- **Weight chart for pen X** → find camera(s) at pen, plot `Weight_Trend_Fit` over time from `weight_reports`. Line chart via python-dataviz.
+
+## Data Context
+
+All data lives in a local SQLite database at `/data/ranch_data.db`. Synced from
+BigQuery every 5 minutes. **Already filtered to this ranch** — no `ranch_uuid`
+filter needed. Use bare table names.
 
 ### Key tables
 
-- **`livestock`** — all animals. Filter `is_deleted = 0 AND status = 'ACTIVE'` for current herd.
-- **`confirmed_events`** — ML-detected events (health, handling, counts). Primary events table. Join to `cameras` on `camera_name`.
+- **`livestock`** — all animals. Filter `is_deleted = 0 AND status = 'ACTIVE'`.
+- **`confirmed_events`** — ML-detected events. Join to `cameras` on `camera_name`.
 - **`weight_record`** — per-animal weights (scale/manual).
-- **`weight_reports`** — pen-level daily weights from video pipeline. Show `Weight_Trend_Fit` as primary value.
-- **`cameras`** — camera registry. Join key for confirmed_events and weight_reports via `camera_name`.
+- **`weight_reports`** — pen-level daily weights. Show `Weight_Trend_Fit`.
+- **`cameras`** — camera registry. Join key via `camera_name`.
 
 ### Join paths
 
 ```
-confirmed_events.camera_name → cameras.name (display names)
-weight_reports.camera_name   → cameras.name (display names)
-weight_record.livestock_uuid → livestock.uuid (animal details)
+confirmed_events.camera_name → cameras.name
+weight_reports.camera_name   → cameras.name
+weight_record.livestock_uuid → livestock.uuid
 ```
 
 ### Soft deletes

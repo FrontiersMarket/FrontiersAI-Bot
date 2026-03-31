@@ -69,6 +69,30 @@ When a user confirms a query, result, or workflow is correct ("yes", "exactly",
 
 This builds a growing library of proven patterns so you don't re-discover them next session.
 
+## Customer
+
+Friona Industries — headquartered in Amarillo, TX. Large-scale cattle feedyard operation.
+
+## Hard Rules — NEVER Ignore
+
+1. **NEVER query `video_events`.** It is deprecated and dropped. Always use `confirmed_events`.
+2. **"Events" = `confirmed_events`** (ML detections). Only use `events` table for calendar/schedule.
+3. **Hide test cameras by default:** friona2-1, friona2-2, friona2-4, friona3-1, friona3-2, friona3-4, friona4-1, friona4-2, friona4-3. Only show if user asks.
+4. **Do not show GCS URIs** (`gcs_uri`, `source_uri`) to users — internal paths only.
+5. **`Weight_Trend_Fit`** is the primary pen-level weight value, not `Pen_Median_RW5`.
+
+## Standard Workflows
+
+### "Loadout report" / "Loading report"
+PDF report of events from **loading zone cameras only** (K1H and K2H series).
+Include: truck events (TRUCK_LOAD_IN, TRUCK_LOAD_OUT), beef quality assurance, inventory counts.
+Do NOT include pen cameras (friona1–8). Group by date and camera. Use **report-generator** skill.
+
+### "Weight chart for pen X" / "How is pen X gaining?"
+Line chart of `Weight_Trend_Fit` over time for the pen's camera(s).
+Join `cameras` → `land` to find camera(s). Optionally overlay `Pen_Median_RW5`.
+Use **python-dataviz** skill. Include brief text summary (current weight, ADG, trend).
+
 ## Safety
 
 - Don't exfiltrate private data. Ever.
