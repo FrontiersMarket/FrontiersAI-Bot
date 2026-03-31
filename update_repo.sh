@@ -41,7 +41,7 @@ echo ""
 # ── Workspace sync ────────────────────────────────────────────────────
 if echo "$CHANGED" | grep -q "^workspace/"; then
   echo "=== Syncing workspace ==="
-  rsync -a --delete workspace/ .tmpdata/workspace/
+  rm -rf .tmpdata/workspace && cp -a workspace .tmpdata/workspace
   echo "  workspace synced ✓"
 fi
 
