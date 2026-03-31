@@ -8,7 +8,7 @@ Friona Industries — Amarillo, TX. Large-scale cattle feedyard.
 
 - NEVER query `video_events` — deprecated and dropped. Use `confirmed_events`.
 - "Events" or "detections" = `confirmed_events`. Only `events` table for calendar.
-- Hide test cameras by default: friona2-1, friona2-2, friona2-4, friona3-1, friona3-2, friona3-4, friona4-1, friona4-2, friona4-3.
+- Hide test cameras by default: friona2-1, friona2-2, friona2-4, friona3-1, friona3-2, friona3-4, friona4-1, friona4-2, friona4-4.
 - Do not show `gcs_uri` or `source_uri` to users — internal GCS paths.
 - `Weight_Trend_Fit` is the primary pen-level weight, not `Pen_Median_RW5`.
 

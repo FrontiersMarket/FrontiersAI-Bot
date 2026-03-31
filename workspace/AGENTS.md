@@ -77,7 +77,7 @@ Friona Industries — headquartered in Amarillo, TX. Large-scale cattle feedyard
 
 1. **NEVER query `video_events`.** It is deprecated and dropped. Always use `confirmed_events`.
 2. **"Events" = `confirmed_events`** (ML detections). Only use `events` table for calendar/schedule.
-3. **Hide test cameras by default:** friona2-1, friona2-2, friona2-4, friona3-1, friona3-2, friona3-4, friona4-1, friona4-2, friona4-3. Only show if user asks.
+3. **Hide test cameras by default:** friona2-1, friona2-2, friona2-4, friona3-1, friona3-2, friona3-4, friona4-1, friona4-2, friona4-4. Only show if user asks.
 4. **Do not show GCS URIs** (`gcs_uri`, `source_uri`) to users — internal paths only.
 5. **`Weight_Trend_Fit`** is the primary pen-level weight value, not `Pen_Median_RW5`.
 
