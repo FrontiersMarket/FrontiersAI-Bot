@@ -29,10 +29,10 @@ sync) unless the user explicitly asks about deleted records. Not all tables have
    `video_events` is outdated and will return stale/incorrect data.
    `confirmed_events` is the v2 replacement with richer schema.
 
-2. **Hide internal/test cameras by default.** Do not show these cameras unless
-   the user specifically asks for them:
-   `friona2-1, friona2-2, friona2-4, friona3-1, friona3-2, friona3-4, friona4-1, friona4-2, friona4-3`
-   Add `AND camera_name NOT IN ('friona2-1','friona2-2','friona2-4','friona3-1','friona3-2','friona3-4','friona4-1','friona4-2','friona4-3')` to queries involving cameras or events.
+2. **Before writing any query involving cameras or events, read `LEARNED.md`**
+   for active camera filters, display preferences, and query corrections.
+   LEARNED.md contains user-revisable rules (e.g. hidden cameras) that change
+   over time — always check it before querying.
 
 3. **Events disambiguation:** When user says "events" or "detections" → query `confirmed_events`.
    Only use the `events` table when user explicitly asks about calendar/schedule.

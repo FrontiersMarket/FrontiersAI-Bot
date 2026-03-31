@@ -41,11 +41,6 @@ def main():
             COUNT(ce.event_id) AS total_events_per_camera
         FROM confirmed_events ce
         LEFT JOIN cameras c ON c.name = ce.camera_name AND c.is_deleted = 0
-        WHERE ce.camera_name NOT IN (
-            'friona2-1','friona2-2','friona2-4',
-            'friona3-1','friona3-2','friona3-4',
-            'friona4-1','friona4-2','friona4-3'
-        )
         GROUP BY ce.camera_name
         HAVING COUNT(ce.event_id) > 0
         ORDER BY camera_name
@@ -57,11 +52,6 @@ def main():
             event_type,
             COUNT(event_id) AS event_count
         FROM confirmed_events
-        WHERE camera_name NOT IN (
-            'friona2-1','friona2-2','friona2-4',
-            'friona3-1','friona3-2','friona3-4',
-            'friona4-1','friona4-2','friona4-3'
-        )
         GROUP BY event_type
         ORDER BY event_count DESC
     """)
