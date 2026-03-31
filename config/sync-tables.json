@@ -394,7 +394,7 @@
       "priority": "medium",
       "filter": "ranch_uuid",
       "note": "KV config per ranch — orchestration settings for weight pipeline"
-    },
+    }
   ],
 
   "disabled": [
