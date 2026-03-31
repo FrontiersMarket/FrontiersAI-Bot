@@ -23,6 +23,22 @@ sync) unless the user explicitly asks about deleted records. Not all tables have
 
 ---
 
+## CRITICAL RULES — Read Before Every Query
+
+1. **ALWAYS use `confirmed_events` for AI/ML-detected events — NEVER `video_events`.**
+   `video_events` is outdated and will return stale/incorrect data.
+   `confirmed_events` is the v2 replacement with richer schema.
+
+2. **Hide internal/test cameras by default.** Do not show these cameras unless
+   the user specifically asks for them:
+   `friona2-1, friona2-2, friona2-4, friona3-1, friona3-2, friona3-4, friona4-1, friona4-2, friona4-3`
+   Add `AND camera_name NOT IN ('friona2-1','friona2-2','friona2-4','friona3-1','friona3-2','friona3-4','friona4-1','friona4-2','friona4-3')` to queries involving cameras or events.
+
+3. **Events disambiguation:** When user says "events" or "detections" → query `confirmed_events`.
+   Only use the `events` table when user explicitly asks about calendar/schedule.
+
+---
+
 ## Execution
 
 ```bash

@@ -1,79 +1,70 @@
 #!/usr/bin/env python3
+"""Generate camera events report data from local SQLite DB.
+
+Uses confirmed_events (v2) — NOT video_events (deprecated).
+Queries the local ranch-scoped database, not BigQuery directly.
+"""
 import json
 import subprocess
 import sys
 from datetime import datetime
 
-def run_bq_query(query):
-    command = [
-        "bq", "query",
-        "--project_id=frontiersmarketplace",
-        "--use_legacy_sql=false",
-        "--format=json",
-        query
-    ]
-    result = subprocess.run(command, capture_output=True, text=True, check=True)
-    return json.loads(result.stdout)
+DB_PATH = "/data/ranch_data.db"
 
-def main(ranch_name):
-    # 1. Get ranch UUID
-    ranch_uuid_query = f"""
-        SELECT uuid, ranch_name, city, state
-        FROM `frontiersmarketplace.public.ranch`
-        WHERE LOWER(ranch_name) = LOWER('{ranch_name}')
-        LIMIT 1
-    """
-    ranch_info = run_bq_query(ranch_uuid_query)
+def run_sql(query):
+    result = subprocess.run(
+        ["sqlite3", "-json", DB_PATH, query],
+        capture_output=True, text=True, check=True
+    )
+    output = result.stdout.strip()
+    return json.loads(output) if output else []
+
+def main():
+    # 1. Get ranch info (single row — DB is pre-scoped)
+    ranch_info = run_sql("""
+        SELECT ranch_name, city, state FROM ranch LIMIT 1
+    """)
     if not ranch_info:
-        print(f"Error: Ranch '{ranch_name}' not found.", file=sys.stderr)
+        print("Error: No ranch found in local DB.", file=sys.stderr)
         sys.exit(1)
-    
-    ranch_uuid = ranch_info[0]['uuid']
-    full_ranch_name = ranch_info[0]['ranch_name']
-    ranch_city = ranch_info[0]['city']
-    ranch_state = ranch_info[0]['state']
 
-    # 2. Get Camera Events Summary
-    camera_events_query = f"""
+    ranch = ranch_info[0]
+    full_ranch_name = ranch['ranch_name']
+    ranch_city = ranch.get('city', '')
+    ranch_state = ranch.get('state', '')
+
+    # 2. Camera events summary (confirmed_events joined to cameras)
+    camera_events_summary = run_sql("""
         SELECT
-            c.display_name AS camera_name,
-            COUNT(DISTINCT ve.video_uuid) AS videos_with_events,
-            COUNT(ve.uuid) AS total_events_per_camera
-        FROM
-            `frontiersmarketplace.public.cameras` AS c
-        JOIN
-            `frontiersmarketplace.public.video_events` AS ve
-        ON
-            c.uuid = ve.camera_id
-        WHERE
-            c.ranch_uuid = '{ranch_uuid}'
-            AND c.is_deleted = FALSE
-            AND ve.is_deleted = FALSE
-        GROUP BY
-            c.display_name
-        HAVING
-            COUNT(ve.uuid) > 0
-        ORDER BY
-            c.display_name
-    """
-    camera_events_summary = run_bq_query(camera_events_query)
+            COALESCE(c.display_name, c.name) AS camera_name,
+            COUNT(DISTINCT ce.date_str) AS days_with_events,
+            COUNT(ce.event_id) AS total_events_per_camera
+        FROM confirmed_events ce
+        LEFT JOIN cameras c ON c.name = ce.camera_name AND c.is_deleted = 0
+        WHERE ce.camera_name NOT IN (
+            'friona2-1','friona2-2','friona2-4',
+            'friona3-1','friona3-2','friona3-4',
+            'friona4-1','friona4-2','friona4-3'
+        )
+        GROUP BY ce.camera_name
+        HAVING COUNT(ce.event_id) > 0
+        ORDER BY camera_name
+    """)
 
-    # 3. Get Events by Type for Pie Chart (table representation)
-    event_type_query = f"""
+    # 3. Events by type
+    event_type_data = run_sql("""
         SELECT
             event_type,
-            COUNT(uuid) AS event_count
-        FROM
-            `frontiersmarketplace.public.video_events`
-        WHERE
-            ranch_id = '{ranch_uuid}'
-            AND is_deleted = FALSE
-        GROUP BY
-            event_type
-        ORDER BY
-            event_count DESC
-    """
-    event_type_data = run_bq_query(event_type_query)
+            COUNT(event_id) AS event_count
+        FROM confirmed_events
+        WHERE camera_name NOT IN (
+            'friona2-1','friona2-2','friona2-4',
+            'friona3-1','friona3-2','friona3-4',
+            'friona4-1','friona4-2','friona4-3'
+        )
+        GROUP BY event_type
+        ORDER BY event_count DESC
+    """)
 
     total_ranch_events = sum(int(item['event_count']) for item in event_type_data)
 
@@ -82,16 +73,19 @@ def main(ranch_name):
         event_type = item['event_type']
         count = int(item['event_count'])
         percentage = (count / total_ranch_events) * 100 if total_ranch_events > 0 else 0
-        event_type_table_rows.append([event_type, str(count), f"{percentage:.2f}%" if total_ranch_events > 0 else "0.00%"])
+        event_type_table_rows.append([
+            event_type, str(count),
+            f"{percentage:.2f}%" if total_ranch_events > 0 else "0.00%"
+        ])
 
-    # Prepare data for camera events table
+    # Prepare camera events table
     camera_table_rows = []
     total_cameras_with_events = len(camera_events_summary)
     total_events_across_cameras = 0
     for camera in camera_events_summary:
         camera_table_rows.append([
             camera['camera_name'],
-            str(camera['videos_with_events']),
+            str(camera['days_with_events']),
             str(camera['total_events_per_camera'])
         ])
         total_events_across_cameras += int(camera['total_events_per_camera'])
@@ -108,14 +102,18 @@ def main(ranch_name):
             {
                 "type": "table",
                 "title": "Cameras with Detected Events",
-                "columns": ["Camera Name", "Videos with Events", "Total Events"],
+                "columns": ["Camera Name", "Days with Events", "Total Events"],
                 "rows": camera_table_rows,
-                "total_row": [f"Total Cameras with Events: {total_cameras_with_events}", "", f"Total Events: {total_events_across_cameras}"]
+                "total_row": [
+                    f"Total Cameras: {total_cameras_with_events}",
+                    "",
+                    f"Total Events: {total_events_across_cameras}"
+                ]
             },
             {
                 "type": "text",
                 "title": "Event Type Distribution",
-                "content": "A pie chart for event type distribution would typically be displayed here. Below is a table summarizing event types and their percentages of total events across the ranch."
+                "content": "Summary of ML-detected event types across all cameras."
             },
             {
                 "type": "table",
@@ -125,13 +123,8 @@ def main(ranch_name):
             }
         ]
     }
-    
+
     print(json.dumps(report_data, indent=2))
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Usage: generate_camera_events_report.py <ranch_name>", file=sys.stderr)
-        sys.exit(1)
-    
-    ranch_name = sys.argv[1]
-    main(ranch_name)
+    main()
