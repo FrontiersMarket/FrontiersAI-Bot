@@ -29,10 +29,10 @@ sync) unless the user explicitly asks about deleted records. Not all tables have
    `video_events` is outdated and will return stale/incorrect data.
    `confirmed_events` is the v2 replacement with richer schema.
 
-2. **Before writing any query involving cameras or events, read `LEARNED.md`**
-   for active camera filters, display preferences, and query corrections.
-   LEARNED.md contains user-revisable rules (e.g. hidden cameras) that change
-   over time — always check it before querying.
+2. **Ensure you have read `MEMORY.md` and `LEARNED.md` this session.**
+   They contain active filters (e.g. hidden cameras), display preferences,
+   and query corrections. If you haven't read them yet, do it now before
+   writing your first query.
 
 3. **Events disambiguation:** When user says "events" or "detections" → query `confirmed_events`.
    Only use the `events` table when user explicitly asks about calendar/schedule.

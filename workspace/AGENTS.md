@@ -21,7 +21,8 @@ Before doing anything else:
 1. Read `USER.md` — who you're helping
 2. Read `SOUL.md` — who you are
 3. Read `memory/YYYY-MM-DD.md` (today + yesterday) for recent context
-4. **If in MAIN SESSION** (direct chat with your human): Also read `MEMORY.md`
+4. Read `LEARNED.md` — active corrections, filters, and preferences
+5. **If in MAIN SESSION** (direct chat with your human): Also read `MEMORY.md`
 
 ## Memory
 
