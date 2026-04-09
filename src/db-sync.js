@@ -1,7 +1,7 @@
 /**
  * db-sync.js — BigQuery → SQLite sync service
  *
- * Pulls all ranch-scoped data from BigQuery `frontiersmarketplace.public` and
+ * Pulls all ranch-scoped data from BigQuery `frontiersmarketplace.<dataset>` and
  * stores it in a local SQLite database at RANCH_DB_PATH. Runs on a schedule
  * (default: every 5 minutes). The bot queries SQLite via the local-db skill
  * instead of BigQuery directly.
@@ -12,7 +12,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 const PROJECT_ID = "frontiersmarketplace";
-const DATASET = "public";
+const DATASET = process.env.GBQ_DATASET?.trim() || "public";
 const BQ_LOCATION = "us-central1";
 const SYNC_INTERVAL_MS = parseInt(
   process.env.DB_SYNC_INTERVAL_MS ?? "300000",

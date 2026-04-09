@@ -19,7 +19,7 @@ const SCOPE_MARKER_END = "<!-- SCOPE:END -->";
  * scope is part of the auto-loaded agent context — no tool call required on
  * the first user message.
  */
-function injectScopeIntoAgents(ranchUuid, agentsPath) {
+function injectScopeIntoAgents(ranchUuid, dataset, agentsPath) {
   if (!existsSync(agentsPath)) return;
 
   const block = [
@@ -28,6 +28,7 @@ function injectScopeIntoAgents(ranchUuid, agentsPath) {
     "",
     `mode: ranch`,
     `ranch_uuid: ${ranchUuid}`,
+    `gbq_dataset: ${dataset}`,
     "",
     "*(Auto-updated by `pnpm setup:local` — do not edit manually)*",
     SCOPE_MARKER_END,
@@ -50,12 +51,13 @@ function injectScopeIntoAgents(ranchUuid, agentsPath) {
   writeFileSync(agentsPath, updated, "utf8");
 }
 
-function buildScopeContent(ranchUuid) {
+function buildScopeContent(ranchUuid, dataset) {
   return [
     "# SCOPE.md — Active Data Scope",
     "",
     "mode: ranch",
     `ranch_uuid: ${ranchUuid}`,
+    `gbq_dataset: ${dataset}`,
     "",
     "# To scope to a different ranch, change ranch_uuid and re-run pnpm setup:local",
     "",
@@ -75,8 +77,10 @@ export function reInjectScope() {
   if (!uuidMatch) return;
 
   const ranchUuid = uuidMatch[1];
+  const datasetMatch = raw.match(/^gbq_dataset:\s*(\S+)/m);
+  const dataset = datasetMatch?.[1] ?? "public";
   const agentsDest = resolve(WORKSPACE_DEST, AGENTS_FILE);
-  injectScopeIntoAgents(ranchUuid, agentsDest);
+  injectScopeIntoAgents(ranchUuid, dataset, agentsDest);
 }
 
 /**
@@ -96,9 +100,27 @@ function writeRanchUuidToEnv(ranchUuid) {
   writeFileSync(ENV_PATH, content, "utf8");
 }
 
+/**
+ * Update (or append) GBQ_DATASET in the .env file without touching other vars.
+ */
+function writeDatasetToEnv(dataset) {
+  if (!existsSync(ENV_PATH)) return;
+
+  let content = readFileSync(ENV_PATH, "utf8");
+
+  if (/^GBQ_DATASET=/m.test(content)) {
+    content = content.replace(/^GBQ_DATASET=.*/m, `GBQ_DATASET=${dataset}`);
+  } else {
+    content = content.trimEnd() + `\n\n# BigQuery dataset to pull ranch data from\nGBQ_DATASET=${dataset}\n`;
+  }
+
+  writeFileSync(ENV_PATH, content, "utf8");
+}
+
 export async function configureBotScope() {
   const existing = parseEnvFile();
   const existingUuid = existing.RANCH_UUID?.trim() ?? "";
+  const existingDataset = existing.GBQ_DATASET?.trim() ?? "public";
 
   const ranchUuid = guardCancel(
     await text({
@@ -113,8 +135,22 @@ export async function configureBotScope() {
     })
   );
 
+  const gbqDataset = guardCancel(
+    await text({
+      message: "BigQuery dataset to pull data from",
+      placeholder: "public",
+      initialValue: existingDataset,
+      validate: (v) => {
+        if (!v || !v.trim()) return "Dataset name is required";
+        if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(v.trim()))
+          return "Must be a valid BigQuery dataset name (letters, numbers, underscores)";
+      },
+    })
+  );
+
   const uuid = ranchUuid.trim().toLowerCase();
-  const content = buildScopeContent(uuid);
+  const dataset = gbqDataset.trim();
+  const content = buildScopeContent(uuid, dataset);
 
   const s = spinner();
   s.start("Writing SCOPE.md, injecting scope into AGENTS.md, updating .env…");
@@ -127,13 +163,14 @@ export async function configureBotScope() {
   // part of the auto-loaded container context — no tool call needed on first message.
   // The source workspace/AGENTS.md is NOT touched to avoid git noise.
   const agentsDest = resolve(WORKSPACE_DEST, AGENTS_FILE);
-  injectScopeIntoAgents(uuid, agentsDest);
+  injectScopeIntoAgents(uuid, dataset, agentsDest);
 
-  // Persist RANCH_UUID to .env so the server and DB sync service can use it
+  // Persist RANCH_UUID and GBQ_DATASET to .env so the server and DB sync service can use them
   writeRanchUuidToEnv(uuid);
+  writeDatasetToEnv(dataset);
 
   s.stop("Scope configured ✓");
-  log.success(`Bot scoped to ranch  ${uuid}`);
+  log.success(`Bot scoped to ranch ${uuid}  (dataset: ${dataset})`);
 
   return uuid;
 }
