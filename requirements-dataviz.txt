@@ -1,0 +1,10 @@
+# Python dataviz dependencies — pinned for reproducible, fast Docker builds.
+# To update: run `pip freeze` inside a working container and update versions here.
+#
+# kaleido 1.x requires Chromium; 0.2.1 is self-contained.
+matplotlib==3.9.2
+seaborn==0.13.2
+plotly==5.24.1
+pandas==2.2.3
+numpy==2.1.3
+kaleido==0.2.1
