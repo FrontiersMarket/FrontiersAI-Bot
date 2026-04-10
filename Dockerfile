@@ -1,23 +1,28 @@
-# ── Stage 1: Compile native Node.js modules ─────────────────────────────────
+# ── Stage 1: Build native modules & global tools ────────────────────────────
+# node:22-bookworm includes build-essential, gcc, make, python3 — needed for
+# native compilation (better-sqlite3, node-pty, and openclaw's native deps).
 FROM node:22-bookworm AS builder
-
-RUN apt-get update \
-  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-    build-essential \
-    python3 \
-  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 COPY package.json pnpm-lock.yaml ./
-RUN corepack enable && pnpm install --frozen-lockfile --prod
+# Pre-cache node headers before native compilation. Without this, node-pty and
+# better-sqlite3 download headers concurrently and the parallel TLS connections
+# timeout on Docker Desktop's network layer (arm64 has no prebuilds for node-pty).
+RUN npm install -g pnpm@10.16.1 node-gyp \
+  && node-gyp install \
+  && pnpm install --frozen-lockfile --prod
+
+# openclaw needs build tools for native deps — MUST be in this stage, not slim
+RUN npm install -g openclaw@2026.3.8
 
 # ── Stage 2: Runtime image ──────────────────────────────────────────────────
+# Everything below until COPY --from=builder runs IN PARALLEL with builder.
 FROM node:22-bookworm-slim
 
 LABEL org.opencontainers.image.title="frontiersai-bot" \
       org.opencontainers.image.description="Frontiers Market Bot powered by OpenClaw"
 
-# Runtime system dependencies (no build-essential needed)
+# Runtime system dependencies (no build-essential, no npm operations)
 RUN apt-get update \
   && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     ca-certificates \
@@ -38,9 +43,6 @@ RUN apt-get update \
   && apt-get update \
   && apt-get install -y --no-install-recommends google-cloud-cli \
   && rm -rf /var/lib/apt/lists/*
-
-# Global OpenClaw CLI
-RUN npm install -g openclaw@2026.3.8
 
 # Python dataviz venv — all versions pinned for reproducible, fast builds.
 # kaleido 1.x requires Chromium which is NOT installed; 0.2.1 is self-contained.
@@ -66,9 +68,12 @@ ENV HOMEBREW_PREFIX="/home/linuxbrew/.linuxbrew"
 ENV HOMEBREW_CELLAR="/home/linuxbrew/.linuxbrew/Cellar"
 ENV HOMEBREW_REPOSITORY="/home/linuxbrew/.linuxbrew/Homebrew"
 
-# Application code — cheap layers that change often go last
+# ── Copy from builder (waits for builder to complete) ───────────────────────
 WORKDIR /app
 COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /usr/local/lib/node_modules/openclaw /usr/local/lib/node_modules/openclaw
+RUN ln -sf ../lib/node_modules/openclaw/openclaw.mjs /usr/local/bin/openclaw
+
 COPY package.json ./
 COPY src ./src
 COPY entrypoint.sh ./entrypoint.sh
