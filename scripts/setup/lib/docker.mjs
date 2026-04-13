@@ -60,9 +60,31 @@ export function buildDockerRunArgs(vars) {
   if (vars.OPENCLAW_GATEWAY_TOKEN) {
     args.push("-e", `OPENCLAW_GATEWAY_TOKEN=${vars.OPENCLAW_GATEWAY_TOKEN}`);
   }
-  if (vars.RANCH_UUID) {
-    args.push("-e", `RANCH_UUID=${vars.RANCH_UUID}`);
+
+  const dbSource = vars.DB_SOURCE?.trim() || "bigquery";
+  args.push("-e", `DB_SOURCE=${dbSource}`);
+
+  if (dbSource === "custom") {
+    // Custom DB (SSH tunnel or direct)
+    if (vars.CUSTOM_DB_TYPE)         args.push("-e", `CUSTOM_DB_TYPE=${vars.CUSTOM_DB_TYPE}`);
+    if (vars.CUSTOM_DB_HOST)         args.push("-e", `CUSTOM_DB_HOST=${vars.CUSTOM_DB_HOST}`);
+    if (vars.CUSTOM_DB_PORT)         args.push("-e", `CUSTOM_DB_PORT=${vars.CUSTOM_DB_PORT}`);
+    if (vars.CUSTOM_DB_NAME)         args.push("-e", `CUSTOM_DB_NAME=${vars.CUSTOM_DB_NAME}`);
+    if (vars.CUSTOM_DB_USER)         args.push("-e", `CUSTOM_DB_USER=${vars.CUSTOM_DB_USER}`);
+    if (vars.CUSTOM_DB_PASSWORD)     args.push("-e", `CUSTOM_DB_PASSWORD=${vars.CUSTOM_DB_PASSWORD}`);
+    if (vars.SSH_HOST)               args.push("-e", `SSH_HOST=${vars.SSH_HOST}`);
+    if (vars.SSH_PORT)               args.push("-e", `SSH_PORT=${vars.SSH_PORT}`);
+    if (vars.SSH_USER)               args.push("-e", `SSH_USER=${vars.SSH_USER}`);
+    if (vars.SSH_PRIVATE_KEY_PATH)   args.push("-e", `SSH_PRIVATE_KEY_PATH=${vars.SSH_PRIVATE_KEY_PATH}`);
+    if (vars.SSH_KEY_PASSPHRASE)     args.push("-e", `SSH_KEY_PASSPHRASE=${vars.SSH_KEY_PASSPHRASE}`);
+    if (vars.SSH_PASSWORD)           args.push("-e", `SSH_PASSWORD=${vars.SSH_PASSWORD}`);
+    if (vars.CUSTOM_DB_SCHEMA_PATH)  args.push("-e", `CUSTOM_DB_SCHEMA_PATH=${vars.CUSTOM_DB_SCHEMA_PATH}`);
+  } else {
+    // BigQuery sync (default)
+    if (vars.RANCH_UUID)   args.push("-e", `RANCH_UUID=${vars.RANCH_UUID}`);
+    if (vars.GBQ_DATASET)  args.push("-e", `GBQ_DATASET=${vars.GBQ_DATASET}`);
   }
+
   args.push("-v", `${ROOT}/.tmpdata:/data`);
   args.push(IMAGE_NAME);
   return args;

@@ -8,6 +8,10 @@ export async function configureEnv() {
   const hasExisting = Object.keys(existing).length > 0;
 
   if (hasExisting) {
+    const dbSourceLabel = existing.DB_SOURCE === "custom"
+      ? `custom (${existing.CUSTOM_DB_TYPE ?? "postgres"} — ${existing.CUSTOM_DB_NAME ?? "not set"})`
+      : `bigquery (ranch: ${existing.RANCH_UUID ?? "⚠  not set — configure in scope step"})`;
+
     note(
       [
         `  File: ${ENV_PATH}`,
@@ -16,7 +20,7 @@ export async function configureEnv() {
         `  OPENCLAW_GATEWAY_TOKEN ${existing.OPENCLAW_GATEWAY_TOKEN ? "set" : "not set (auto-generated)"}`,
         `  PORT                   ${existing.PORT ?? "8080 (default)"}`,
         `  ENABLE_WEB_TUI         ${existing.ENABLE_WEB_TUI ?? "false (default)"}`,
-        `  RANCH_UUID             ${existing.RANCH_UUID ? existing.RANCH_UUID : "⚠  not set (required — set in scope step)"}`,
+        `  DB_SOURCE              ${dbSourceLabel}`,
       ].join("\n"),
       "Existing .env"
     );

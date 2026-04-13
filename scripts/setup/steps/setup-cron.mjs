@@ -3,7 +3,10 @@ import { guardCancel } from "../lib/utils.mjs";
 import { execFileAsync } from "../lib/utils.mjs";
 import { CONTAINER_NAME } from "../lib/constants.mjs";
 
-const JOB_NAME = "bq-sync";
+// bq-sync kept for BigQuery mode (backwards compat); custom mode uses db-sync
+function jobName(dbSource) {
+  return dbSource === "custom" ? "db-sync" : "bq-sync";
+}
 
 const INTERVAL_OPTIONS = [
   { value: "1m",  label: "Every 1 minute" },
@@ -29,27 +32,31 @@ async function openclawCmd(args) {
 /**
  * Find an existing cron job by name. Returns the job object or null.
  */
-async function findExistingJob() {
+async function findExistingJob(name) {
   try {
     const { stdout } = await openclawCmd("cron list --json");
     const data = JSON.parse(stdout);
-    return data.jobs?.find((j) => j.name === JOB_NAME) ?? null;
+    return data.jobs?.find((j) => j.name === name) ?? null;
   } catch {
     return null;
   }
 }
 
 /**
- * Configure the OpenClaw cron job that triggers BigQuery → SQLite syncs.
+ * Configure the OpenClaw cron job that triggers the local DB sync.
+ * Works for both BigQuery (FM Management) and Custom DB modes.
  */
 export async function setupSyncCron(vars) {
-  const port = vars.PORT ?? "8080";
-  const existing = await findExistingJob();
+  const port     = vars.PORT ?? "8080";
+  const dbSource = vars.DB_SOURCE?.trim() || "bigquery";
+  const name     = jobName(dbSource);
+
+  const existing = await findExistingJob(name);
 
   if (existing) {
     const state = existing.disabled ? "disabled" : "enabled";
     log.info(
-      `Cron job "${JOB_NAME}" already exists (${state}, every ${existing.every ?? existing.cron ?? "?"}).`
+      `Cron job "${name}" already exists (${state}, every ${existing.every ?? existing.cron ?? "?"}).`
     );
 
     const action = guardCancel(
@@ -66,34 +73,30 @@ export async function setupSyncCron(vars) {
     if (action === "keep" || action === "skip") return;
 
     if (action === "update") {
-      // Remove existing job and recreate with new interval
       await openclawCmd(`cron rm ${existing.id}`);
     }
   }
 
   const every = guardCancel(
     await select({
-      message: "How often should the DB sync with BigQuery?",
+      message: "How often should the bot sync the local database?",
       options: INTERVAL_OPTIONS,
     })
   );
 
   const s = spinner();
-  s.start(`Creating OpenClaw cron job "${JOB_NAME}" (every ${every})…`);
+  s.start(`Creating OpenClaw cron job "${name}" (every ${every})…`);
 
   try {
-    // Build the command the cron job will trigger.
-    // The /internal/sync-now endpoint is localhost-only — no credentials needed.
     const triggerCmd = `curl -s -X POST http://localhost:${port}/internal/sync-now`;
 
     await openclawCmd(
-      `cron add --name "${JOB_NAME}" --every ${every} --message "${triggerCmd}" --no-deliver --light-context --session isolated`
+      `cron add --name "${name}" --every ${every} --message "${triggerCmd}" --no-deliver --light-context --session isolated`
     );
 
-    s.stop(`Cron job "${JOB_NAME}" created ✓`);
+    s.stop(`Cron job "${name}" created ✓`);
 
-    // Verify it shows up
-    const job = await findExistingJob();
+    const job = await findExistingJob(name);
     if (job) {
       note(
         [
@@ -108,7 +111,7 @@ export async function setupSyncCron(vars) {
           `  openclaw cron disable ${job.id}`,
           `  openclaw cron edit ${job.id} --every 15m`,
         ].join("\n"),
-        "BQ Sync Cron Job"
+        "DB Sync Cron Job"
       );
     }
   } catch (err) {
@@ -117,7 +120,7 @@ export async function setupSyncCron(vars) {
       [
         "You can create it manually later:",
         `  docker exec -it ${CONTAINER_NAME} su openclaw -c \\`,
-        `    "openclaw cron add --name ${JOB_NAME} --every 5m \\`,
+        `    "openclaw cron add --name ${name} --every 5m \\`,
         `      --message 'curl -s -X POST http://localhost:${port}/internal/sync-now' \\`,
         `      --no-deliver --light-context --session isolated"`,
       ].join("\n")

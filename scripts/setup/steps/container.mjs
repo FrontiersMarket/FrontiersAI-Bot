@@ -7,7 +7,7 @@ import {
 } from "../lib/docker.mjs";
 import { spawnInherited, bail, guardCancel } from "../lib/utils.mjs";
 import { execFileAsync } from "../lib/utils.mjs";
-import { CONTAINER_NAME, ROOT } from "../lib/constants.mjs";
+import { CONTAINER_NAME, IMAGE_NAME, ROOT } from "../lib/constants.mjs";
 import { resolve } from "node:path";
 import { existsSync, mkdirSync } from "node:fs";
 
@@ -24,21 +24,47 @@ function ensureTmpdataDir() {
   }
 }
 
+/**
+ * Return true if the image contains a specific file path.
+ * Used to detect stale images that are missing new source files.
+ */
+async function imageHasFile(filePath) {
+  try {
+    await execFileAsync(
+      "docker",
+      ["run", "--rm", "--entrypoint", "test", IMAGE_NAME, "-f", filePath],
+      { timeout: 8000 }
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function manageContainer(vars) {
   const s = spinner();
   s.start("Checking Docker image and container state…");
 
-  const [imgExists, containerState] = await Promise.all([
+  const dbSource = vars.DB_SOURCE?.trim() || "bigquery";
+
+  const [imgExists, containerState, customDbInImage] = await Promise.all([
     imageExists(),
     getContainerState(),
+    // Only check for the custom sync module when we'll actually need it
+    dbSource === "custom" ? imageHasFile("/app/src/db-sync-custom.js") : Promise.resolve(true),
   ]);
 
   s.stop("Docker state checked");
+
+  // If the image is missing db-sync-custom.js, a rebuild is required before
+  // the custom DB sync service can start inside the container.
+  const needsRebuildForCustomDb = dbSource === "custom" && imgExists && !customDbInImage;
 
   note(
     [
       `  Image '${CONTAINER_NAME}':  ${imgExists ? "✓ built" : "✗ not found — build required"}`,
       `  Container:            ${containerState ? `'${CONTAINER_NAME}' is ${containerState}` : `no container named '${CONTAINER_NAME}'`}`,
+      ...(needsRebuildForCustomDb ? ["", "  ⚠  Image is missing db-sync-custom.js — rebuild required for custom DB mode"] : []),
     ].join("\n"),
     "Docker state"
   );
@@ -51,6 +77,10 @@ export async function manageContainer(vars) {
       await confirm({ message: "Build Docker image now?  (required to continue)", initialValue: true })
     );
     if (!doBuild) bail("Cannot continue without a built image. Run: pnpm docker:build");
+    shouldBuild = true;
+  } else if (needsRebuildForCustomDb) {
+    // Image is missing the custom DB sync module — must rebuild, no choice
+    log.warn("Rebuilding image to include custom DB sync support…");
     shouldBuild = true;
   } else {
     const rebuildChoice = guardCancel(

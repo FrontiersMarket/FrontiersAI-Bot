@@ -46,9 +46,10 @@ function formatNumber(n) {
 }
 
 export async function waitForDbSync(vars) {
-  const port     = vars.PORT ?? "8080";
-  const password = vars.SETUP_PASSWORD;
-  const statusUrl = `http://localhost:${port}/setup/api/sync-status`;
+  const port       = vars.PORT ?? "8080";
+  const password   = vars.SETUP_PASSWORD;
+  const statusUrl  = `http://localhost:${port}/setup/api/sync-status`;
+  const expectCustom = (vars.DB_SOURCE?.trim() || "bigquery") === "custom";
 
   // ── Phase 1: wait for sync service to initialize ───────────────────────────
   const s = spinner();
@@ -68,7 +69,22 @@ export async function waitForDbSync(vars) {
       continue;
     }
 
-    if (!status.ranchUuid) {
+    // Detect image/mode mismatch: we expect custom but container is running BigQuery mode.
+    // This means the image was built before db-sync-custom.js was added.
+    const isBigQuery = !status.dbSource || status.dbSource === "bigquery";
+    if (expectCustom && isBigQuery) {
+      s.stop("DB sync error — container is running in BigQuery mode, not custom DB mode");
+      log.warn(
+        [
+          "The Docker image does not include the custom DB sync module.",
+          "Rebuild the image and recreate the container:",
+          "  pnpm docker:build",
+          "  pnpm run setup:local",
+        ].join("\n")
+      );
+      return;
+    }
+    if (isBigQuery && !status.ranchUuid) {
       s.stop("DB sync skipped — RANCH_UUID not set in container");
       log.warn("Restart the container after re-running the scope step.");
       return;
@@ -94,9 +110,17 @@ export async function waitForDbSync(vars) {
     log.warn(
       [
         "The sync service failed to start. Possible causes:",
-        "  • GCP credentials not loaded (check GOOGLE_APPLICATION_CREDENTIALS in container)",
-        "  • RANCH_UUID env var missing (restart container after scope step)",
-        "  • BigQuery connection issue",
+        ...(status?.dbSource === "custom"
+          ? [
+              "  • CUSTOM_DB_NAME / CUSTOM_DB_HOST env vars missing (restart container after scope step)",
+              "  • SSH connection failed (check SSH_HOST, SSH_USER, SSH_PRIVATE_KEY_PATH)",
+              "  • DB credentials incorrect (check CUSTOM_DB_USER / CUSTOM_DB_PASSWORD)",
+            ]
+          : [
+              "  • GCP credentials not loaded (check GOOGLE_APPLICATION_CREDENTIALS in container)",
+              "  • RANCH_UUID env var missing (restart container after scope step)",
+              "  • BigQuery connection issue",
+            ]),
         "",
         "Check logs with:  docker logs -f frontiersai-bot",
         ...(logs ? ["", "Recent container output:", ...logs.split("\n").map((l) => `  ${l}`)] : []),
@@ -123,10 +147,11 @@ export async function waitForDbSync(vars) {
 
       if (status.running) {
         const populated = Object.values(status.tables ?? {}).filter((t) => t.rows > 0).length;
+        const sourceLabel = status.dbSource === "custom" ? "remote DB" : "BigQuery";
         s.message(
           populated > 0
             ? `Syncing… ${populated} tables populated so far`
-            : "Syncing tables from BigQuery…"
+            : `Syncing tables from ${sourceLabel}…`
         );
         stallWarned = false;
       } else if (!stallWarned) {

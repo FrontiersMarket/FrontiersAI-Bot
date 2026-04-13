@@ -39,6 +39,7 @@ import { configureImessage } from "./steps/imessage.mjs";
 import { configureContainerName } from "./steps/container-name.mjs";
 import { runCliOnboarding } from "./steps/onboard-cli.mjs";
 import { guardCancel } from "./lib/utils.mjs";
+import { parseEnvFile } from "./lib/env-file.mjs";
 
 async function main() {
   console.log("");
@@ -79,9 +80,11 @@ async function main() {
   // Phase 5 — GCP service-account key (enforced)
   await setupGcpKey(vars);
 
-  // Phase 6 — bot data scope (must run before container so RANCH_UUID is in env)
-  const ranchUuid = await configureBotScope();
-  if (ranchUuid) vars.RANCH_UUID = ranchUuid;
+  // Phase 6 — bot data scope (must run before container so scope vars reach the container)
+  await configureBotScope();
+  // Re-read .env now — scope step writes DB_SOURCE, CUSTOM_DB_*, SSH_*, RANCH_UUID, etc.
+  // and buildDockerRunArgs() needs the full picture.
+  Object.assign(vars, parseEnvFile());
 
   // Phase 7 — Docker image + container
   const containerStarted = await manageContainer(vars);

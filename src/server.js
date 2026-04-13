@@ -9,7 +9,10 @@ import express from "express";
 import httpProxy from "http-proxy";
 import pty from "node-pty";
 import { WebSocketServer } from "ws";
-import { initSync, stopSync, syncState } from "./db-sync.js";
+const _DB_SOURCE = process.env.DB_SOURCE?.trim().toLowerCase() || "bigquery";
+const { initSync, runSync, stopSync, syncState } = _DB_SOURCE === "custom"
+  ? await import("./db-sync-custom.js")
+  : await import("./db-sync.js");
 
 const PORT = Number.parseInt(process.env.PORT ?? "8080", 10);
 const STATE_DIR =
@@ -80,6 +83,7 @@ const ENABLE_WEB_TUI = process.env.ENABLE_WEB_TUI?.toLowerCase() === "true";
 const ENABLE_CHAT_COMPLETIONS = process.env.ENABLE_CHAT_COMPLETIONS?.toLowerCase() === "true";
 
 const RANCH_UUID = process.env.RANCH_UUID?.trim() || null;
+const DB_SOURCE = _DB_SOURCE; // re-export for use throughout server
 // DB lives alongside the state dir (e.g. /data/ranch_data.db)
 const DATA_DIR = path.dirname(STATE_DIR);
 const RANCH_DB_PATH =
@@ -87,12 +91,20 @@ const RANCH_DB_PATH =
   path.join(DATA_DIR, "ranch_data.db");
 
 function startSyncIfNeeded() {
-  if (!RANCH_UUID) {
-    console.warn("[db-sync] RANCH_UUID not configured — local DB sync disabled");
-    return;
-  }
   if (syncState.initialized) return;
-  initSync(RANCH_UUID, RANCH_DB_PATH);
+  if (DB_SOURCE === "custom") {
+    if (!process.env.CUSTOM_DB_NAME?.trim()) {
+      console.warn("[db-sync] DB_SOURCE=custom but CUSTOM_DB_NAME not configured — sync disabled");
+      return;
+    }
+    initSync(null, RANCH_DB_PATH);
+  } else {
+    if (!RANCH_UUID) {
+      console.warn("[db-sync] RANCH_UUID not configured — local DB sync disabled");
+      return;
+    }
+    initSync(RANCH_UUID, RANCH_DB_PATH);
+  }
 }
 const TUI_IDLE_TIMEOUT_MS = Number.parseInt(
   process.env.TUI_IDLE_TIMEOUT_MS ?? "300000",
@@ -985,6 +997,7 @@ app.get("/setup/api/export", requireSetupAuth, async (_req, res) => {
 app.get("/setup/api/sync-status", requireSetupAuth, (_req, res) => {
   res.json({
     ok: true,
+    dbSource: DB_SOURCE,
     ranchUuid: RANCH_UUID,
     dbPath: RANCH_DB_PATH,
     syncIntervalMs: parseInt(process.env.DB_SYNC_INTERVAL_MS ?? "300000", 10),
@@ -993,18 +1006,20 @@ app.get("/setup/api/sync-status", requireSetupAuth, (_req, res) => {
 });
 
 app.post("/setup/api/sync-now", requireSetupAuth, (_req, res) => {
-  if (!RANCH_UUID) {
+  if (DB_SOURCE === "custom" && !process.env.CUSTOM_DB_NAME?.trim()) {
+    return res.status(400).json({ ok: false, error: "CUSTOM_DB_NAME not configured" });
+  }
+  if (DB_SOURCE !== "custom" && !RANCH_UUID) {
     return res.status(400).json({ ok: false, error: "RANCH_UUID not configured" });
   }
   if (syncState.running) {
     return res.json({ ok: true, message: "Sync already in progress" });
   }
   // Kick off async, don't await
-  import("./db-sync.js").then(({ runSync }) => {
-    runSync(RANCH_UUID, RANCH_DB_PATH).catch((err) =>
-      console.error(`[db-sync] manual sync failed: ${err.message}`)
-    );
-  });
+  const syncArg = DB_SOURCE === "custom" ? null : RANCH_UUID;
+  runSync(syncArg, RANCH_DB_PATH).catch((err) =>
+    console.error(`[db-sync] manual sync failed: ${err.message}`)
+  );
   return res.json({ ok: true, message: "Sync started" });
 });
 
@@ -1019,17 +1034,19 @@ app.post("/internal/sync-now", (req, res) => {
   if (!isLocal) {
     return res.status(403).json({ ok: false, error: "localhost only" });
   }
-  if (!RANCH_UUID) {
+  if (DB_SOURCE === "custom" && !process.env.CUSTOM_DB_NAME?.trim()) {
+    return res.status(400).json({ ok: false, error: "CUSTOM_DB_NAME not configured" });
+  }
+  if (DB_SOURCE !== "custom" && !RANCH_UUID) {
     return res.status(400).json({ ok: false, error: "RANCH_UUID not configured" });
   }
   if (syncState.running) {
     return res.json({ ok: true, message: "Sync already in progress" });
   }
-  import("./db-sync.js").then(({ runSync }) => {
-    runSync(RANCH_UUID, RANCH_DB_PATH).catch((err) =>
-      console.error(`[db-sync] cron sync failed: ${err.message}`)
-    );
-  });
+  const syncArg = DB_SOURCE === "custom" ? null : RANCH_UUID;
+  runSync(syncArg, RANCH_DB_PATH).catch((err) =>
+    console.error(`[db-sync] cron sync failed: ${err.message}`)
+  );
   return res.json({ ok: true, message: "Sync started" });
 });
 
